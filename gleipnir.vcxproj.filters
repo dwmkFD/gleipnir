@@ -33,6 +33,15 @@
     <ClInclude Include="pch.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="CSettingCommonDlg.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="CSettingOtherDlg.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="CSettingDlg.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="gleipnir.cpp">
@@ -42,6 +51,15 @@
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="pch.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="CSettingCommonDlg.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="CSettingOtherDlg.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="CSettingDlg.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>

@@ -7,6 +7,7 @@
 #include "gleipnir.h"
 #include "gleipnirDlg.h"
 #include "afxdialogex.h"
+#include "CSettingDlg.h"
 #include <shellapi.h>
 #include <memory>
 
@@ -38,6 +39,10 @@ namespace
 	constexpr LPCTSTR kScanStartCommand = _T("/scan start");
 	constexpr LPCTSTR kScanStopCommand = _T("/scan stop");
 	constexpr LPCTSTR kScanCancelCommand = _T("/scan cancel");
+
+	// Edit Control にこの文字列(大文字小文字区別なし)が入力されたら
+	// 設定ダイアログを開く。
+	constexpr LPCTSTR kOptionCommand = _T("/option");
 
 	// instant.ini が無い場合に作成する既定のテンプレート。
 	constexpr LPCTSTR kDefaultInstantIniTemplate =
@@ -521,6 +526,17 @@ void CgleipnirDlg::OnEnChangeEdit1()
 		m_filteredResults.clear();
 
 		RequestCancelScan();
+		return;
+	}
+
+	if (trimmed.CompareNoCase(kOptionCommand) == 0)
+	{
+		SetDlgItemText(IDC_EDIT1, _T(""));
+		m_listResults.ResetContent();
+		m_filteredResults.clear();
+
+		CSettingDlg dlg(this);
+		dlg.DoModal();
 		return;
 	}
 

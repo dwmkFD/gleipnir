@@ -183,6 +183,9 @@
     </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="CSettingCommonDlg.h" />
+    <ClInclude Include="CSettingDlg.h" />
+    <ClInclude Include="CSettingOtherDlg.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="gleipnir.h" />
     <ClInclude Include="gleipnirDlg.h" />
@@ -191,6 +194,9 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CSettingCommonDlg.cpp" />
+    <ClCompile Include="CSettingDlg.cpp" />
+    <ClCompile Include="CSettingOtherDlg.cpp" />
     <ClCompile Include="gleipnir.cpp" />
     <ClCompile Include="gleipnirDlg.cpp" />
     <ClCompile Include="pch.cpp">
