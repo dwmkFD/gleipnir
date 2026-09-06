@@ -50,6 +50,16 @@ BOOL CSettingDlg::OnInitDialog()
 	return TRUE;
 }
 
+void CSettingDlg::OnOK()
+{
+	// OKで閉じる際に、各ページのコントロール値を config.ini へ保存する。
+	CString configPath = GetConfigFilePath();
+	m_pageCommon.SaveToConfig(configPath);
+	m_pageOther.SaveToConfig(configPath);
+
+	CDialogEx::OnOK();
+}
+
 void CSettingDlg::CreateTabPages()
 {
 	// タブコントロールの位置(ダイアログのクライアント座標)を取得する。
@@ -79,6 +89,11 @@ void CSettingDlg::CreateTabPages()
 	m_pageOther.SetWindowPos(nullptr,
 		displayRect.left, displayRect.top, displayRect.Width(), displayRect.Height(),
 		SWP_NOZORDER);
+
+	// data\config.ini があれば読み込み、各ページのコントロールへ反映する。
+	CString configPath = GetConfigFilePath();
+	m_pageCommon.LoadFromConfig(configPath);
+	m_pageOther.LoadFromConfig(configPath);
 }
 
 void CSettingDlg::UpdatePageVisibility()
@@ -96,4 +111,26 @@ void CSettingDlg::OnTabSelChange(NMHDR* pNMHDR, LRESULT* pResult)
 	UpdatePageVisibility();
 
 	*pResult = 0;
+}
+
+// static
+CString CSettingDlg::GetConfigFilePath()
+{
+	// gleipnir.exe と同じフォルダの data フォルダ以下に保存する
+	// (CgleipnirDlg::GetDataFolderPath() と同じ規則。クラスをまたぐ
+	//  依存を避けるため、ここでは同じロジックを簡潔に複製している)。
+	TCHAR exePath[MAX_PATH] = { 0 };
+	::GetModuleFileName(nullptr, exePath, MAX_PATH);
+
+	CString dir = exePath;
+	int pos = dir.ReverseFind(_T('\\'));
+	if (pos >= 0)
+	{
+		dir = dir.Left(pos);
+	}
+	dir += _T("\\data");
+
+	::CreateDirectory(dir, nullptr); // 既に存在する場合のエラーは無視してよい
+
+	return dir + _T("\\config.ini");
 }

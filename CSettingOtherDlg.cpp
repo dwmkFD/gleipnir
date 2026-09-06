@@ -33,3 +33,25 @@ END_MESSAGE_MAP()
 
 
 // CSettingOtherDlg メッセージ ハンドラー
+
+void CSettingOtherDlg::OnOK()
+{
+	// 埋め込みページのため何もしない(EndDialogを呼ばない)。
+}
+
+void CSettingOtherDlg::OnCancel()
+{
+	// 埋め込みページのため何もしない(EndDialogを呼ばない)。
+}
+
+void CSettingOtherDlg::LoadFromConfig(const CString& configPath)
+{
+	UNREFERENCED_PARAMETER(configPath);
+	// このタブには現時点で保存対象のコントロールが無い。
+}
+
+void CSettingOtherDlg::SaveToConfig(const CString& configPath)
+{
+	UNREFERENCED_PARAMETER(configPath);
+	// このタブには現時点で保存対象のコントロールが無い。
+}

@@ -22,6 +22,7 @@
 #define IDC_EDIT7                       1010
 #define IDC_EDIT8                       1011
 #define IDC_EDIT9                       1012
+#define IDC_EDIT_HOTKEY                 1013
 #define ID_TRAY_EXIT                    32772
 
 // Next default values for new objects
@@ -30,7 +31,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        136
 #define _APS_NEXT_COMMAND_VALUE         32773
-#define _APS_NEXT_CONTROL_VALUE         1010
+#define _APS_NEXT_CONTROL_VALUE         1014
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

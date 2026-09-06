@@ -13,6 +13,7 @@
 // 表示/非表示を切り替える。
 //
 // gleipnirDlg 側から「/option」入力で DoModal() 表示される想定。
+// OKで閉じると各ページの設定値を data\config.ini へ保存する。
 
 
 // CSettingDlg ダイアログ
@@ -33,16 +34,22 @@ public:
 protected:
 	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV サポート
 	virtual BOOL OnInitDialog();
+	virtual void OnOK();
 
 	CTabCtrl m_tabCtrl;
 	CSettingCommonDlg m_pageCommon;
 	CSettingOtherDlg m_pageOther;
 
 	// タブ内にページを埋め込む位置(タブコントロールの表示領域)を計算し、
-	// 2つの子ダイアログをそこに配置・生成する。
+	// 2つの子ダイアログをそこに配置・生成する。生成後、data\config.ini
+	// があれば読み込んで各ページのコントロールへ反映する。
 	void CreateTabPages();
 	// 現在選択されているタブに応じて、表示するページを切り替える。
 	void UpdatePageVisibility();
+
+	// data\config.ini のパスを返す(gleipnir.exeのフォルダ基準。
+	// CgleipnirDlg::GetDataFolderPath() と同じ規則)。
+	static CString GetConfigFilePath();
 
 	afx_msg void OnTabSelChange(NMHDR* pNMHDR, LRESULT* pResult);
 

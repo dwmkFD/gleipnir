@@ -194,23 +194,22 @@ VS2022でMFCダイアログベーステンプレートを生成し、それを�
   保証するための安全策でもある。
 
 
-### 7. 設定ダイアログ本体・タブ構成・「/option」起動(今回追加)
+### 7. 設定ダイアログ本体・タブ構成・「/option」起動
 - ユーザー側でVisual Studioのリソースエディタに以下を追加済み
   (`resource.h`は本セッション開始前から`IDD_SETTING_DIALOG`等を定義済み):
   - `IDD_SETTING_DIALOG`(タブコントロール`IDC_SETTING_DIALOG_TAB`を含む)
   - `IDD_SETTING_DIALOG_COMMON`(「共通」タブページ)
   - `IDD_SETTING_DIALOG_OTHER`(「その他」タブページ)
-- **新規クラス**:
-  - `CSettingDlg`(`SettingDlg.h/.cpp`): 設定ダイアログ本体。
+- **クラス**(GitHubリポジトリでは`C`プレフィックス付きで管理):
+  - `CSettingDlg`(`CSettingDlg.h/.cpp`): 設定ダイアログ本体。
     `OnInitDialog`でタブに「共通」「その他」の2項目を追加し、
     `CreateTabPages()`でタブの表示領域(見出しを除いた内側の矩形)を
     計算した上に`CSettingCommonDlg`/`CSettingOtherDlg`を子ウィンドウとして
     生成・重ねて配置する。`TCN_SELCHANGE`通知でタブ切り替え時に
     どちらか一方だけを`ShowWindow`で表示する。
-  - `CSettingCommonDlg`(`SettingCommonDlg.h/.cpp`):
-    `IDD_SETTING_DIALOG_COMMON`に対応する子ダイアログ。現時点では
-    箱のみで、個々のコントロール(`IDC_EDIT2`等)への機能実装はまだ無い。
-  - `CSettingOtherDlg`(`SettingOtherDlg.h/.cpp`): 同上、`IDD_SETTING_DIALOG_OTHER`用。
+  - `CSettingCommonDlg`(`CSettingCommonDlg.h/.cpp`):
+    `IDD_SETTING_DIALOG_COMMON`に対応する子ダイアログ。
+  - `CSettingOtherDlg`(`CSettingOtherDlg.h/.cpp`): 同上、`IDD_SETTING_DIALOG_OTHER`用。
 - **重要な前提条件**: `IDD_SETTING_DIALOG_COMMON`/`IDD_SETTING_DIALOG_OTHER`の
   各ダイアログリソース自体のプロパティで、`Style=Child`・`Border=None`・
   タイトルバー/システムメニュー無効、になっている必要がある。
@@ -219,14 +218,58 @@ VS2022でMFCダイアログベーステンプレートを生成し、それを�
 - **起動方法**: `gleipnirDlg`の`IDC_EDIT1`に`/option`(大文字小文字区別なし)
   と入力すると、`CSettingDlg`をモーダル(`DoModal()`)で表示する
   (`/scan`系コマンドと同じ`OnEnChangeEdit1`内で判定)。
-  トレイメニューへのショートカット追加は今回は見送った(必要であれば
+  トレイメニューへのショートカット追加は見送った(必要であれば
   「設定」サブメニューに1項目追加するだけで対応可能)。
-- **次のステップ**: `IDC_EDIT2`〜`IDC_EDIT9`・`IDC_COMBO1`〜`IDC_COMBO3`・
-  `IDC_CHECK1`など、各タブページ内の個々のコントロールが何を表す設定
-  なのかが未確定なため、`DoDataExchange`でのDDXバインドや
-  `config.ini`(`GetSettingsFilePath()`、既に%initfileマクロ用に
-  パスだけ定義済み)への保存/読み込みは未実装。用途が決まり次第、
-  各コントロールに対する具体的な処理を追加する想定。
+- **レイアウト上の注意**: `IDD_SETTING_DIALOG_COMMON`(309×309)は、
+  親の`IDD_SETTING_DIALOG`のタブ表示領域(263×237程度)より大きいため、
+  現状だと右・下がはみ出す可能性がある。気になる場合は
+  `IDD_SETTING_DIALOG`本体を大きくすることを検討。
+
+### 8. 設定ダイアログの値の保存/読み込み・config.ini対応(今回追加)
+GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際に
+読み込み、各タブページ内のコントロールが何を表すラベルかを確認した上で実装した。
+
+- **`IDC_EDIT1`→`IDC_EDIT_HOTKEY`にリネーム**: `IDD_SETTING_DIALOG_COMMON`内の
+  「呼び出しキー」欄が、メイン検索ウィンドウの検索欄と同じ`IDC_EDIT1`(値1000)を
+  使っていたため、新規ID`IDC_EDIT_HOTKEY`(値1013)に変更(`resource.h`更新、
+  `_APS_NEXT_CONTROL_VALUE`も1014に修正)。
+  - 呼び出しキーは現状Caps Lock固定で変更不可のため、`.rc`側で
+    `ES_READONLY | WS_DISABLED`を付与し、`CSettingCommonDlg::OnInitDialog`側でも
+    `SetDlgItemText(IDC_EDIT_HOTKEY, "Caps Lock")` + `EnableWindow(FALSE)`を実行
+    (保存対象からは除外)。
+- **`gleipnir.rc`の副次的な修正**: `IDD_SETTING_DIALOG_OTHER`のリソースに、
+  タブ埋め込み用ページにもかかわらず独自のOK/キャンセルボタン
+  (`IDOK`/`IDCANCEL`)が残っていた。埋め込み子ウィンドウの状態でこれらを
+  クリックすると`CDialogEx`既定の`EndDialog()`が呼ばれ、モードレスの
+  子ダイアログに対して未定義動作となる恐れがあったため、`.rc`からボタンを
+  削除。念のため`CSettingOtherDlg::OnOK()`/`OnCancel()`を空実装で
+  オーバーライドし、二重に安全策とした。
+- **`data\config.ini`への保存/読み込み**:
+  - `CSettingCommonDlg`に各コントロールに対応するメンバー変数を追加し、
+    `DoDataExchange`で`DDX_Text`/`DDX_CBString`/`DDX_Check`によりバインド。
+  - `LoadFromConfig(configPath)`: `GetPrivateProfileString`/`GetPrivateProfileInt`で
+    `[Common]`セクションから読み込み、`UpdateData(FALSE)`でコントロールへ反映。
+  - `SaveToConfig(configPath)`: `UpdateData(TRUE)`でコントロールの現在値を
+    取り込んだ上で`WritePrivateProfileString`により書き込み。
+  - `CSettingDlg::CreateTabPages()`内で子ページ生成後に両ページの
+    `LoadFromConfig`を呼び出し、`CSettingDlg::OnOK()`をオーバーライドして
+    OK押下時に両ページの`SaveToConfig`を呼んでから`CDialogEx::OnOK()`を
+    実行(閉じる前に保存)。キャンセル時は保存しない。
+  - `CSettingOtherDlg`は現時点で保存対象のコントロールが無いため、
+    `LoadFromConfig`/`SaveToConfig`は空実装(将来コントロール追加時に実装)。
+  - 設定ファイルパスは`CgleipnirDlg::GetDataFolderPath()`と同じ規則
+    (exeのフォルダ直下の`data`フォルダ)。クラスをまたぐ依存を避けるため、
+    `CSettingDlg::GetConfigFilePath()`として同ロジックを複製している
+    (将来的に共通ユーティリティへ切り出す余地あり)。
+  - `[Common]`に保存されるキー: `FolderExpandKey` / `ParentFolderExpandKey` /
+    `SelectDownKey` / `SelectUpKey` / `SearchMethodNormal` /
+    `SearchMethodFolderExpand` / `CandidateIcon` / `MaxEnumCount` /
+    `AutoDeleteBrokenPath`(0/1) / `TextColor` / `BackgroundColor` / `Font`。
+- **未実装(値の保存/読み込みのみ)**: これらの設定値は`config.ini`に
+  保存・読み込みされるだけで、実際のランチャー動作(検索方式の切り替え、
+  候補アイコンの表示、文字色/背景色/フォントの反映、フォルダ展開キーの
+  実キー割り当て等)にはまだ反映されていない。今回のスコープは
+  「値の永続化」のみ。
 
 
 ## 既知の制約・今後の改善候補
@@ -245,32 +288,44 @@ VS2022でMFCダイアログベーステンプレートを生成し、それを�
   標準権限プロセスの低レベルフックが届かないことがある。
 - `instant.ini`のキーワード一致は前方一致・大文字小文字区別ありのみ。
   正規表現等の高度なマッチングには未対応。
-- 設定ダイアログ本体(タブ切り替え)は実装済みだが、`IDD_SETTING_DIALOG_COMMON`/
-  `IDD_SETTING_DIALOG_OTHER`内の各コントロールへの機能実装(値の保存/読み込み等)
-  はまだ無い(詳細は「7. 設定ダイアログ本体・タブ構成・「/option」起動」を参照)。
+- 設定ダイアログの値は`config.ini`に保存/読み込みされるが、実際の
+  ランチャー動作への反映(検索方式・候補アイコン・文字色/背景色/フォント・
+  フォルダ展開キー等の実装)はまだ無い(詳細は「8. 設定ダイアログの値の
+  保存/読み込み・config.ini対応」を参照)。
+- `CSettingDlg::GetConfigFilePath()`は`CgleipnirDlg::GetDataFolderPath()`と
+  同じロジックをクラスをまたいで複製している(重複コード、将来的に
+  共通ユーティリティへの切り出しを検討)。
 
 ## 次のセッションへの引き継ぎ事項
-1. `SettingDlg.h/.cpp`・`SettingCommonDlg.h/.cpp`・`SettingOtherDlg.h/.cpp`
-   をプロジェクトに追加(ソリューションエクスプローラーから「既存項目の追加」)
-   した上でビルドし、`/option`と入力して設定ダイアログが開くか確認。
-   - `IDD_SETTING_DIALOG_COMMON`/`IDD_SETTING_DIALOG_OTHER`が別ウィンドウとして
-     浮いてしまう場合は、各ダイアログのプロパティで
-     `Style=Child`・`Border=None`・タイトルバー/システムメニュー無効に
-     なっているか確認してください(「7. 設定ダイアログ本体〜」の項を参照)。
-2. `IDC_EDIT2`〜`IDC_EDIT9`・`IDC_COMBO1`〜`IDC_COMBO3`・`IDC_CHECK1`が
-   それぞれ何の設定を表す想定か教えてもらえれば、次セッションで
-   実際の値の保存/読み込み処理を実装する。
-3. ビルド・実行し、スキャン中にタイトルバーの件数表示が更新されるか、
+1. GitHub上の`resource.h`・`gleipnir.rc`・`CSettingDlg.h/.cpp`・
+   `CSettingCommonDlg.h/.cpp`・`CSettingOtherDlg.h/.cpp`・`gleipnirDlg.cpp`を
+   最新版に置き換えてビルド。`/option`で設定ダイアログを開き、各項目に
+   値を入れてOKで閉じ、`data\config.ini`に保存されるか、再度開いたときに
+   復元されるか確認。
+   - `IDD_SETTING_DIALOG_COMMON`(309×309)が親ダイアログのタブ表示領域より
+     大きく、はみ出す可能性がある点に注意(「7.」の「レイアウト上の注意」参照)。
+2. 「呼び出しキー」欄が無効化され「Caps Lock」と表示された状態で
+   問題ないか確認。
+3. `IDD_SETTING_DIALOG_OTHER`のOK/キャンセルボタンを`.rc`から削除した点、
+   ビルド・表示に問題が無いか確認。
+4. 保存された`config.ini`の値を実際のランチャー動作に反映する実装
+   (検索方式の切り替え、候補アイコン表示、文字色/背景色/フォント適用、
+   フォルダ展開キーの実キー割り当て等)に着手するかどうか、
+   優先順位を相談したい。
+5. ビルド・実行し、スキャン中にタイトルバーの件数表示が更新されるか、
    `/scan stop`または`/scan cancel`(あるいはトレイメニューの
    「スキャンをキャンセル」)で実際に中断され、`index.txt`が
-   上書きされないことを確認(前回セッションからの引き継ぎ、未確認であれば)。
-4. `data\instant.ini`を作成し、`n/`や`g/`などのキーワードで実際に
-   コマンドが起動するか確認(前々回セッションからの引き継ぎ、未確認であれば)。
+   上書きされないことを確認(未確認であれば)。
+6. `data\instant.ini`を作成し、`n/`や`g/`などのキーワードで実際に
+   コマンドが起動するか確認(未確認であれば)。
 
 ## 未着手 (TODO)
-- 設定ダイアログ内の各コントロール(`IDC_EDIT2`〜`IDC_EDIT9`・`IDC_COMBO1`〜
-  `IDC_COMBO3`・`IDC_CHECK1`)の用途確定と、値の保存/読み込み実装
+- `config.ini`に保存された各設定値を実際のランチャー動作へ反映
+  (検索方式、候補アイコン、文字色/背景色/フォント、フォルダ展開キー等)
+- `CSettingOtherDlg`への設定項目追加(現状コントロール無し)
 - 設定ダイアログを開くトレイメニュー項目の追加(任意、現状は`/option`のみ)
+- `IDD_SETTING_DIALOG`本体のサイズ調整(タブページとのサイズ不一致解消)
+- `GetConfigFilePath()`のクラス間重複コードの共通化
 - スキャン進捗の詳細化(進捗率、残りドライブ数等)
 - リストボックスとエディットボックス間のキーボード操作の改善
 - ウィンドウ位置・サイズの記憶
@@ -315,3 +370,13 @@ VS2022でMFCダイアログベーステンプレートを生成し、それを�
   `SettingCommonDlg.h/.cpp`・`SettingOtherDlg.h/.cpp`)を実装。
   タブ切り替えでのページ表示/非表示、`/option`入力での設定ダイアログ
   起動に対応した。タブページ内の個々のコントロールへの機能実装は未着手。
+- 2026-08-26: GitHubリポジトリ(`dwmkFD/gleipnir`、公開)の`resource.h`/
+  `gleipnir.rc`を直接読み込み、タブページ内の各コントロールの意味を確認。
+  `IDC_EDIT1`(呼び出しキー欄)を`IDC_EDIT_HOTKEY`にリネームし、Caps Lock
+  固定のため無効化表示に変更。`IDD_SETTING_DIALOG_OTHER`に残っていた
+  不要なOK/キャンセルボタンを`.rc`から削除。`CSettingCommonDlg`に
+  各コントロールのDDXバインドと`data\config.ini`への保存/読み込み
+  (`LoadFromConfig`/`SaveToConfig`)を実装し、`CSettingDlg`の
+  ページ生成時に読み込み・`OnOK`時に保存するようにした。ファイル名は
+  実リポジトリに合わせ`C`プレフィックス付き(`CSettingDlg.h/.cpp`等)に
+  統一。
