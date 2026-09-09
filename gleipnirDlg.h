@@ -89,6 +89,7 @@ protected:
 	// ファイルインデックス
 	std::vector<FileEntry> m_fileIndex;       // 保存/読み込み済みの全件
 	std::vector<FileEntry> m_filteredResults; // 直近の検索結果(リストボックスの行と対応)
+	std::vector<CString> m_launchHistory;     // 起動履歴(フルパス、先頭ほど最近使った)
 	bool m_bIndexing;                         // インデックス作成中かどうか
 	std::atomic<bool> m_scanCancelRequested;  // スキャンのキャンセルが要求されたか
 
@@ -103,6 +104,8 @@ protected:
 	void CreateDynamicControls();
 	void UpdateSearchResults(const CString& query);
 	void LaunchSelectedResult();
+	// 起動に成功したパスを履歴の先頭に記録し、data\history.txt へ保存する。
+	void RecordLaunchHistory(const CString& fullPath);
 
 	// スキャン実行前の確認ダイアログ。Yesならtrueを返す。
 	bool ConfirmScan(const CString& message);
@@ -141,6 +144,7 @@ protected:
 	// 設定ファイルもこの下に置く想定の共通ヘルパー。
 	static CString GetDataFolderPath();
 	static CString GetIndexFilePath();
+	static CString GetHistoryFilePath();
 	static CString GetScanConfigFilePath();
 	static CString GetInstantConfigFilePath();
 	// 現時点では設定ダイアログ本体は未実装だが、instant.iniの%initfile
@@ -165,6 +169,8 @@ protected:
 
 	static void SaveIndexToFile(const CString& filePath, const std::vector<FileEntry>& entries);
 	static bool LoadIndexFromFile(const CString& filePath, std::vector<FileEntry>& entries);
+	static void SaveHistoryToFile(const CString& filePath, const std::vector<CString>& history);
+	static bool LoadHistoryFromFile(const CString& filePath, std::vector<CString>& history);
 	static void ScanDirectoryRecursive(const CString& path, std::vector<FileEntry>& results, ScanContext& ctx);
 
 	void BuildIndexAsync(const std::vector<CString>& driveRoots,

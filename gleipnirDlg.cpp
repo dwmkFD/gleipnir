@@ -10,6 +10,7 @@
 #include "CSettingDlg.h"
 #include <shellapi.h>
 #include <memory>
+#include <set>
 
 #pragma comment(lib, "shell32.lib")
 
@@ -206,6 +207,9 @@ BOOL CgleipnirDlg::OnInitDialog()
 	// 前回保存されたインデックスがあれば読み込む(無ければ何もしない。
 	// トレイメニューまたは「/scan」入力から手動で作成してもらう)
 	LoadIndexFromFile(GetIndexFilePath(), m_fileIndex);
+
+	// 起動履歴があれば読み込む(無ければ何もしない。まだ何も起動していない状態)
+	LoadHistoryFromFile(GetHistoryFilePath(), m_launchHistory);
 
 	// instant.ini があれば読み込む(無ければ何もしない)
 	LoadInstantCommands();
@@ -863,13 +867,57 @@ void CgleipnirDlg::UpdateSearchResults(const CString& query)
 	CString lowerQuery = query;
 	lowerQuery.MakeLower();
 
-	for (const auto& entry : m_fileIndex)
+	// 重複除去用(小文字化したフルパスの集合)。
+	std::set<CString> addedPaths;
+
+	// 起動履歴(最近使った順)から一致するものを優先して先に追加する。
+	for (const auto& histPath : m_launchHistory)
 	{
-		CString lowerName = entry.displayName;
+		CString displayName = ExtractFileName(histPath);
+		CString lowerName = displayName;
 		lowerName.MakeLower();
 
-		if (lowerName.Find(lowerQuery) >= 0)
+		if (lowerName.Find(lowerQuery) < 0)
 		{
+			continue;
+		}
+
+		FileEntry entry;
+		entry.fullPath = histPath;
+		entry.displayName = displayName;
+		m_filteredResults.push_back(entry);
+
+		CString key = histPath;
+		key.MakeLower();
+		addedPaths.insert(key);
+
+		if (static_cast<int>(m_filteredResults.size()) >= kMaxDisplayResults)
+		{
+			break;
+		}
+	}
+
+	// 履歴側で埋まっていない残り枠を、インデックス全体からの通常検索で埋める
+	// (履歴に既に含まれるパスは重複させない)。
+	if (static_cast<int>(m_filteredResults.size()) < kMaxDisplayResults)
+	{
+		for (const auto& entry : m_fileIndex)
+		{
+			CString lowerName = entry.displayName;
+			lowerName.MakeLower();
+
+			if (lowerName.Find(lowerQuery) < 0)
+			{
+				continue;
+			}
+
+			CString key = entry.fullPath;
+			key.MakeLower();
+			if (addedPaths.find(key) != addedPaths.end())
+			{
+				continue;
+			}
+
 			m_filteredResults.push_back(entry);
 			if (static_cast<int>(m_filteredResults.size()) >= kMaxDisplayResults)
 			{
@@ -903,12 +951,39 @@ void CgleipnirDlg::LaunchSelectedResult()
 	HINSTANCE hResult = ::ShellExecute(nullptr, _T("open"), path, nullptr, nullptr, SW_SHOWNORMAL);
 	if (reinterpret_cast<INT_PTR>(hResult) > 32)
 	{
+		// 起動履歴に記録する(検索時に優先表示するため)。
+		RecordLaunchHistory(path);
+
 		// 起動に成功したら検索窓をクリアし、自身は非表示にする
 		SetDlgItemText(IDC_EDIT1, _T(""));
 		m_listResults.ResetContent();
 		m_filteredResults.clear();
 		ShowWindow(SW_HIDE);
 	}
+}
+
+void CgleipnirDlg::RecordLaunchHistory(const CString& fullPath)
+{
+	// 既に履歴にあれば削除してから先頭に挿入し、最近使った順に並べ直す。
+	for (auto it = m_launchHistory.begin(); it != m_launchHistory.end(); ++it)
+	{
+		if (it->CompareNoCase(fullPath) == 0)
+		{
+			m_launchHistory.erase(it);
+			break;
+		}
+	}
+
+	m_launchHistory.insert(m_launchHistory.begin(), fullPath);
+
+	// 件数上限を超えたら古いものを切り捨てる。
+	constexpr size_t kMaxHistoryEntries = 50;
+	if (m_launchHistory.size() > kMaxHistoryEntries)
+	{
+		m_launchHistory.resize(kMaxHistoryEntries);
+	}
+
+	SaveHistoryToFile(GetHistoryFilePath(), m_launchHistory);
 }
 
 // static
@@ -945,6 +1020,12 @@ CString CgleipnirDlg::GetDataFolderPath()
 CString CgleipnirDlg::GetIndexFilePath()
 {
 	return GetDataFolderPath() + _T("\\index.txt");
+}
+
+// static
+CString CgleipnirDlg::GetHistoryFilePath()
+{
+	return GetDataFolderPath() + _T("\\history.txt");
 }
 
 // static
@@ -1135,6 +1216,85 @@ bool CgleipnirDlg::LoadIndexFromFile(const CString& filePath, std::vector<FileEn
 		entry.fullPath = line;
 		entry.displayName = ExtractFileName(line);
 		entries.push_back(entry);
+	}
+
+	return true;
+}
+
+// static
+void CgleipnirDlg::SaveHistoryToFile(const CString& filePath, const std::vector<CString>& history)
+{
+	CFile file;
+	if (!file.Open(filePath, CFile::modeCreate | CFile::modeWrite | CFile::shareExclusive))
+	{
+		TRACE(traceAppMsg, 0, "警告: 履歴ファイルの保存に失敗しました。\n");
+		return;
+	}
+
+	// UTF-16LE BOM(index.txtと同じ自前フォーマット)。
+	const WORD bom = 0xFEFF;
+	file.Write(&bom, sizeof(bom));
+
+	for (const auto& path : history)
+	{
+		CString line = path;
+		line += _T("\r\n");
+		file.Write(line.GetString(), line.GetLength() * sizeof(TCHAR));
+	}
+}
+
+// static
+bool CgleipnirDlg::LoadHistoryFromFile(const CString& filePath, std::vector<CString>& history)
+{
+	history.clear();
+
+	CFile file;
+	if (!file.Open(filePath, CFile::modeRead | CFile::shareDenyWrite))
+	{
+		return false; // 未作成なら何もしない(まだ何も起動していない状態)
+	}
+
+	ULONGLONG size = file.GetLength();
+	if (size < sizeof(wchar_t))
+	{
+		return false;
+	}
+
+	std::vector<BYTE> buffer(static_cast<size_t>(size));
+	file.Read(buffer.data(), static_cast<UINT>(size));
+	file.Close();
+
+	const wchar_t* pData = reinterpret_cast<const wchar_t*>(buffer.data());
+	size_t count = buffer.size() / sizeof(wchar_t);
+
+	size_t start = 0;
+	if (count > 0 && pData[0] == 0xFEFF)
+	{
+		start = 1; // BOMをスキップ
+	}
+
+	CString line;
+	for (size_t i = start; i < count; ++i)
+	{
+		wchar_t ch = pData[i];
+		if (ch == L'\n')
+		{
+			line.TrimRight(_T("\r"));
+			if (!line.IsEmpty())
+			{
+				history.push_back(line);
+			}
+			line.Empty();
+		}
+		else
+		{
+			line += ch;
+		}
+	}
+	if (!line.IsEmpty())
+	{
+		line.TrimRight(_T("\r"));
+		history.push_back(line);
 	}
 
 	return true;
