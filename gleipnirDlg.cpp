@@ -32,6 +32,7 @@ namespace
 
 	// 検索結果リストボックスに表示する最大件数(パフォーマンス配慮)。
 	constexpr int kMaxDisplayResults = 200;
+	constexpr int kMaxFolderExpandResults = 2000; // フォルダ展開時の表示上限
 
 	// Edit Control にこの文字列(大文字小文字区別なし)が入力されたら
 	// スキャンを実行する。
@@ -104,12 +105,15 @@ namespace
 	// フルパスからファイル名部分のみを取り出す。
 	CString ExtractFileName(const CString& path)
 	{
-		int pos = path.ReverseFind(_T('\\'));
+		// 末尾の \ は除いてから取り出す("C:\" → "C:"、"D:\data\" → "data")。
+		CString trimmed = path;
+		trimmed.TrimRight(_T('\\'));
+		int pos = trimmed.ReverseFind(_T('\\'));
 		if (pos < 0)
 		{
-			return path;
+			return trimmed;
 		}
-		return path.Mid(pos + 1);
+		return trimmed.Mid(pos + 1);
 	}
 
 	// カンマ区切りの文字列を分割し、各要素の前後の空白を取り除いた
@@ -569,6 +573,36 @@ void CgleipnirDlg::OnSysCommand(UINT nID, LPARAM lParam)
 
 BOOL CgleipnirDlg::PreTranslateMessage(MSG* pMsg)
 {
+	// フォルダ展開(暫定キー。キー割り当ての設定は次回以降に実装):
+	//   Tab               : 選択中の候補がフォルダなら、その中身を展開する
+	//   BackSpace(入力が空): 展開中なら親フォルダへ(ルートなら展開を終了)
+	if (pMsg->message == WM_KEYDOWN
+		&& (GetFocus() == GetDlgItem(IDC_EDIT1) || GetFocus() == &m_listResults))
+	{
+		const bool modifier = (::GetKeyState(VK_SHIFT) < 0) || (::GetKeyState(VK_CONTROL) < 0)
+			|| (::GetKeyState(VK_MENU) < 0);
+
+		if (pMsg->wParam == VK_TAB && !modifier)
+		{
+			if (ExpandSelectedFolder())
+			{
+				return TRUE;
+			}
+			// フォルダでなければ通常の Tab(フォーカス移動)
+		}
+		else if (pMsg->wParam == VK_BACK && !modifier && !m_expandedFolder.IsEmpty()
+			&& (pMsg->lParam & (1 << 30)) == 0) // 押しっぱなしの自動リピートでは遡らない
+		{
+			CString input;
+			GetDlgItemText(IDC_EDIT1, input);
+			if (input.IsEmpty())
+			{
+				ExpandParentFolder();
+				return TRUE;
+			}
+		}
+	}
+
 	if (pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_RETURN)
 	{
 		if (GetFocus() == GetDlgItem(IDC_EDIT1) || GetFocus() == &m_listResults)
@@ -894,6 +928,7 @@ void CgleipnirDlg::HideLauncherWindow()
 
 	if (clearOnHide)
 	{
+		LeaveFolderExpansion();
 		SetDlgItemText(IDC_EDIT1, _T(""));
 		m_listResults.ResetContent();
 		m_filteredResults.clear();
@@ -1349,6 +1384,13 @@ void CgleipnirDlg::OpenInNotepad(const CString& path)
 
 void CgleipnirDlg::UpdateSearchResults(const CString& query)
 {
+	// フォルダ展開中は、展開したフォルダの中身だけを対象にする。
+	if (!m_expandedFolder.IsEmpty())
+	{
+		UpdateFolderExpandResults(query);
+		return;
+	}
+
 	m_listResults.ResetContent();
 	m_filteredResults.clear();
 
@@ -1460,6 +1502,236 @@ void CgleipnirDlg::UpdateSearchResults(const CString& query)
 	{
 		m_listResults.SetCurSel(0);
 	}
+}
+
+bool CgleipnirDlg::ExpandSelectedFolder()
+{
+	const int sel = m_listResults.GetCurSel();
+	if (sel < 0 || sel >= static_cast<int>(m_filteredResults.size()))
+	{
+		return false;
+	}
+
+	// スキャン時には区別せず、ここで初めて実在とフォルダかどうかを確認する。
+	const CString path = m_filteredResults[sel].fullPath;
+	if (!IsDirectoryPath(path))
+	{
+		return false;
+	}
+	return ExpandFolder(path);
+}
+
+bool CgleipnirDlg::ExpandFolder(const CString& folderPath, const CString& selectPath)
+{
+	std::vector<FileEntry> items;
+	EnumerateFolder(folderPath, items);
+
+	m_expandedFolder = folderPath;
+	m_folderItems = std::move(items);
+
+	CString title = _T("gleipnir - ") + m_expandedFolder;
+	SetWindowText(title);
+
+	// 入力欄を空にして、中身を全件表示する(EN_CHANGE 経由でも同じ表示になる)。
+	SetDlgItemText(IDC_EDIT1, _T(""));
+	UpdateFolderExpandResults(CString());
+
+	// 親へ戻った場合は、直前にいたフォルダを選択状態にする。
+	if (!selectPath.IsEmpty())
+	{
+		for (size_t i = 0; i < m_filteredResults.size(); ++i)
+		{
+			if (m_filteredResults[i].fullPath.CompareNoCase(selectPath) == 0)
+			{
+				m_listResults.SetCurSel(static_cast<int>(i));
+				break;
+			}
+		}
+	}
+	return true;
+}
+
+bool CgleipnirDlg::ExpandParentFolder()
+{
+	if (m_expandedFolder.IsEmpty())
+	{
+		return false;
+	}
+
+	const CString current = m_expandedFolder;
+	const CString parent = GetParentFolderPath(current);
+	if (parent.IsEmpty() || !IsDirectoryPath(parent))
+	{
+		// ルート(またはアクセス不能)なら展開を終了して通常の検索に戻る。
+		LeaveFolderExpansion();
+		SetDlgItemText(IDC_EDIT1, _T(""));
+		m_listResults.ResetContent();
+		m_filteredResults.clear();
+		return true;
+	}
+	return ExpandFolder(parent, current);
+}
+
+void CgleipnirDlg::LeaveFolderExpansion()
+{
+	if (m_expandedFolder.IsEmpty())
+	{
+		return;
+	}
+	m_expandedFolder.Empty();
+	m_folderItems.clear();
+	// スキャン中はタイトルを進捗表示に使っているので触らない(次の進捗通知で更新される)。
+	if (!m_bIndexing)
+	{
+		SetWindowText(_T("gleipnir"));
+	}
+}
+
+void CgleipnirDlg::UpdateFolderExpandResults(const CString& query)
+{
+	m_listResults.ResetContent();
+	m_filteredResults.clear();
+
+	const std::vector<CString> terms = SplitQueryTerms(query);
+
+	if (terms.empty())
+	{
+		// 入力が空なら全件(フォルダ→ファイルの名前順。列挙時に並べ済み)。
+		for (const auto& item : m_folderItems)
+		{
+			if (static_cast<int>(m_filteredResults.size()) >= kMaxFolderExpandResults)
+			{
+				break;
+			}
+			m_filteredResults.push_back(item);
+		}
+	}
+	else
+	{
+		struct Hit
+		{
+			int score;
+			size_t index;
+		};
+		std::vector<Hit> hits;
+		for (size_t i = 0; i < m_folderItems.size(); ++i)
+		{
+			int score = 0;
+			if (MatchName(m_folderItems[i].lowerName, terms, m_searchMethodFolderExpand, score))
+			{
+				hits.push_back({ score, i });
+			}
+		}
+		// 一致の良さ → 列挙順(フォルダ→ファイルの名前順)。
+		std::stable_sort(hits.begin(), hits.end(),
+			[](const Hit& a, const Hit& b) { return a.score < b.score; });
+
+		for (const auto& hit : hits)
+		{
+			if (static_cast<int>(m_filteredResults.size()) >= kMaxFolderExpandResults)
+			{
+				break;
+			}
+			m_filteredResults.push_back(m_folderItems[hit.index]);
+		}
+	}
+
+	// 展開中はフォルダが自明なので、名前だけを表示する(フォルダは末尾に \ )。
+	m_listResults.SetRedraw(FALSE);
+	for (const auto& entry : m_filteredResults)
+	{
+		m_listResults.AddString(entry.isFolder ? entry.displayName + _T("\\") : entry.displayName);
+	}
+	m_listResults.SetRedraw(TRUE);
+	m_listResults.Invalidate();
+
+	if (m_listResults.GetCount() > 0)
+	{
+		m_listResults.SetCurSel(0);
+	}
+}
+
+// static
+bool CgleipnirDlg::IsDirectoryPath(const CString& path)
+{
+	const DWORD attr = ::GetFileAttributes(path);
+	return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+// static
+void CgleipnirDlg::EnumerateFolder(const CString& folderPath, std::vector<FileEntry>& items)
+{
+	items.clear();
+
+	CString base = folderPath;
+	if (base.Right(1) != _T("\\"))
+	{
+		base += _T("\\");
+	}
+
+	WIN32_FIND_DATA fd;
+	HANDLE hFind = ::FindFirstFileEx(base + _T("*"), FindExInfoBasic, &fd,
+		FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH);
+	if (hFind == INVALID_HANDLE_VALUE)
+	{
+		return;
+	}
+
+	do
+	{
+		const CString name = fd.cFileName;
+		if (name == _T(".") || name == _T(".."))
+		{
+			continue;
+		}
+		// 隠しファイル/フォルダ($RECYCLE.BIN、desktop.ini 等)は表示しない。
+		if (fd.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN)
+		{
+			continue;
+		}
+
+		// インデックスと違い、拡張子(scan.ini の REGIST)では絞らず全て表示する。
+		FileEntry entry;
+		entry.fullPath = base + name;
+		entry.displayName = name;
+		entry.lowerName = name;
+		entry.lowerName.MakeLower();
+		entry.isFolder = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+		items.push_back(entry);
+	} while (::FindNextFile(hFind, &fd));
+
+	::FindClose(hFind);
+
+	// フォルダ → ファイル、それぞれ名前順(大文字小文字区別なし)。
+	std::sort(items.begin(), items.end(), [](const FileEntry& a, const FileEntry& b)
+	{
+		if (a.isFolder != b.isFolder) return a.isFolder;
+		return a.lowerName.Compare(b.lowerName) < 0;
+	});
+}
+
+// static
+CString CgleipnirDlg::GetParentFolderPath(const CString& folderPath)
+{
+	CString path = folderPath;
+	path.TrimRight(_T('\\'));
+
+	// "C:" (ドライブ直下)や "\\server\share" 程度まで来たらそれ以上は遡らない。
+	const int pos = path.ReverseFind(_T('\\'));
+	if (pos < 0 || path.GetLength() <= 2)
+	{
+		return CString();
+	}
+	CString parent = path.Left(pos);
+	if (parent.IsEmpty() || parent == _T("\\") || (parent.Left(2) == _T("\\\\") && parent.Find(_T('\\'), 2) < 0))
+	{
+		return CString(); // UNC の "\\server" 単体には遡らない
+	}
+	if (parent.GetLength() == 2 && parent[1] == _T(':'))
+	{
+		parent += _T("\\"); // "C:" → "C:\"
+	}
+	return parent;
 }
 
 void CgleipnirDlg::LoadSearchSettings()
@@ -1607,7 +1879,8 @@ void CgleipnirDlg::LaunchSelectedResult()
 		// 起動履歴に記録する(検索時に優先表示するため)。
 		RecordLaunchHistory(path);
 
-		// 起動に成功したら検索窓をクリアし、自身は非表示にする
+		// 起動に成功したら検索窓をクリア(フォルダ展開も終了)し、自身は非表示にする
+		LeaveFolderExpansion();
 		SetDlgItemText(IDC_EDIT1, _T(""));
 		m_listResults.ResetContent();
 		m_filteredResults.clear();
@@ -2132,6 +2405,14 @@ UINT CgleipnirDlg::IndexThreadProc(LPVOID pParam)
 		{
 			break;
 		}
+		// スキャン起点(ドライブ直下 "C:\\" 等)自体も1件として登録する
+		// (配下のフォルダは ScanDirectoryRecursive 内で登録される)。
+		FileEntry rootEntry;
+		rootEntry.fullPath = driveRoot;
+		rootEntry.displayName = ExtractFileName(driveRoot);
+		pResults->push_back(rootEntry);
+		++ctx.foundCount;
+
 		ScanDirectoryRecursive(driveRoot, *pResults, ctx);
 	}
 

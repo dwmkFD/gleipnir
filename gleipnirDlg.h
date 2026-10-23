@@ -39,6 +39,7 @@ struct FileEntry
 	CString fullPath;     // フルパス(起動・検索対象)
 	CString displayName;  // ファイル名のみ(検索・表示用)
 	CString lowerName;    // displayName の小文字版(検索用キャッシュ。初回検索時に作成)
+	bool isFolder = false; // フォルダ展開時の列挙でのみ設定(インデックス側では使わない)
 };
 
 // 検索方式(設定「検索方式」。config.ini には prefix / substring / skip で保存)
@@ -140,6 +141,20 @@ protected:
 	SearchMethod m_searchMethodNormal = SearchMethod::Substring;
 	SearchMethod m_searchMethodFolderExpand = SearchMethod::Skip;
 	void LoadSearchSettings();
+
+	// フォルダ展開。選択中の候補がフォルダなら(キー押下の時点で実在を確認)、
+	// その中身を実際に列挙してリストに表示し、入力欄はその中の絞り込みに使う。
+	// 展開中でなければ m_expandedFolder は空。
+	CString m_expandedFolder;
+	std::vector<FileEntry> m_folderItems;  // 展開中フォルダの中身(展開時に1回だけ列挙)
+	bool ExpandSelectedFolder();           // 選択中の候補がフォルダなら展開する
+	bool ExpandFolder(const CString& folderPath, const CString& selectPath = CString());
+	bool ExpandParentFolder();             // 展開中フォルダの親へ(ルートなら展開を終了)
+	void LeaveFolderExpansion();           // 通常の検索モードへ戻る
+	void UpdateFolderExpandResults(const CString& query);
+	static bool IsDirectoryPath(const CString& path);
+	static void EnumerateFolder(const CString& folderPath, std::vector<FileEntry>& items);
+	static CString GetParentFolderPath(const CString& folderPath); // ルートなら空
 public:
 	static SearchMethod ParseSearchMethod(const CString& value, SearchMethod defaultMethod);
 	static LPCTSTR SearchMethodToConfigValue(SearchMethod method);
