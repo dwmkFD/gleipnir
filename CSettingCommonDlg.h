@@ -33,8 +33,10 @@ protected:
 	CString m_parentFolderExpandKey;    // 親フォルダ展開キー
 	CString m_selectDownKey;            // 下選択キー
 	CString m_selectUpKey;              // 上選択キー
-	CString m_searchMethodNormal;       // 検索方式(通常時)
-	CString m_searchMethodFolderExpand; // 検索方式(フォルダ展開時)
+	// 検索方式(コンボの番号。0=先頭部分一致, 1=中間部分一致, 2=スキップマッチング)。
+	// config.ini には prefix / substring / skip で保存する。
+	int     m_searchMethodNormalSel;       // 通常時(既定: 中間部分一致)
+	int     m_searchMethodFolderExpandSel; // フォルダ展開時(既定: スキップマッチング)
 	int     m_candidateIconSel;         // 候補リストのアイコン(0=表示, 1=非表示。config.ini には 1/0 で保存)
 	int     m_maxEnumCount;             // 候補リストの最大列挙数
 	BOOL    m_autoDeleteBrokenPath;     // リンク切れパスの自動削除

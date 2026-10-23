@@ -11,6 +11,7 @@
 #include <shellapi.h>
 #include <memory>
 #include <set>
+#include <algorithm>
 
 #pragma comment(lib, "shell32.lib")
 
@@ -226,6 +227,9 @@ BOOL CgleipnirDlg::OnInitDialog()
 
 	// instant.ini があれば読み込む(無ければ何もしない)
 	LoadInstantCommands();
+
+	// 検索方式(config.ini。未設定なら通常時=中間部分一致、フォルダ展開時=スキップマッチング)
+	LoadSearchSettings();
 
 	return TRUE;  // フォーカスをコントロールに設定した場合を除き、TRUE を返します。
 }
@@ -743,6 +747,7 @@ void CgleipnirDlg::OnTrayReloadSettings()
 {
 	LoadInstantCommands();
 	ApplyAppearance(); // config.ini を手で編集した場合の外観反映
+	LoadSearchSettings();
 	ShowTrayBalloon(_T("gleipnir"), _T("設定を再読み込みしました。"));
 }
 
@@ -789,8 +794,9 @@ void CgleipnirDlg::OnEnChangeEdit1()
 		CSettingDlg dlg(this);
 		if (dlg.DoModal() == IDOK)
 		{
-			// 保存された文字色・背景色・フォントを即座に反映する。
+			// 保存された設定(外観・検索方式)を即座に反映する。
 			ApplyAppearance();
+			LoadSearchSettings();
 		}
 		return;
 	}
@@ -1346,70 +1352,101 @@ void CgleipnirDlg::UpdateSearchResults(const CString& query)
 	m_listResults.ResetContent();
 	m_filteredResults.clear();
 
-	if (query.IsEmpty())
+	// 半角/全角スペースで区切った各語の AND 検索。
+	const std::vector<CString> terms = SplitQueryTerms(query);
+	if (terms.empty())
 	{
 		return;
 	}
 
-	CString lowerQuery = query;
-	lowerQuery.MakeLower();
+	const SearchMethod method = m_searchMethodNormal;
 
 	// 重複除去用(小文字化したフルパスの集合)。
 	std::set<CString> addedPaths;
 
 	// 起動履歴(最近使った順)から一致するものを優先して先に追加する。
+	// 履歴内の並びは一致の良さではなく「最近使った順」のまま。
 	for (const auto& histPath : m_launchHistory)
 	{
-		CString displayName = ExtractFileName(histPath);
-		CString lowerName = displayName;
-		lowerName.MakeLower();
+		FileEntry entry;
+		entry.fullPath = histPath;
+		entry.displayName = ExtractFileName(histPath);
+		entry.lowerName = entry.displayName;
+		entry.lowerName.MakeLower();
 
-		if (lowerName.Find(lowerQuery) < 0)
+		int score = 0;
+		if (!MatchName(entry.lowerName, terms, method, score))
 		{
 			continue;
 		}
-
-		FileEntry entry;
-		entry.fullPath = histPath;
-		entry.displayName = displayName;
-		m_filteredResults.push_back(entry);
 
 		CString key = histPath;
 		key.MakeLower();
 		addedPaths.insert(key);
 
+		m_filteredResults.push_back(entry);
 		if (static_cast<int>(m_filteredResults.size()) >= kMaxDisplayResults)
 		{
 			break;
 		}
 	}
 
-	// 履歴側で埋まっていない残り枠を、インデックス全体からの通常検索で埋める
-	// (履歴に既に含まれるパスは重複させない)。
-	if (static_cast<int>(m_filteredResults.size()) < kMaxDisplayResults)
+	// 残り枠を、インデックス全体から一致の良い順に埋める。
+	// 全件を判定してから上位だけを並べ替える(先頭から200件で打ち切ると、
+	// 良い一致がインデックスの後ろにある場合に表示されないため)。
+	const size_t remaining = static_cast<size_t>(kMaxDisplayResults) - m_filteredResults.size();
+	if (remaining > 0)
 	{
-		for (const auto& entry : m_fileIndex)
+		struct Hit
 		{
-			CString lowerName = entry.displayName;
-			lowerName.MakeLower();
+			int score;
+			int nameLength;
+			size_t index;
+		};
+		std::vector<Hit> hits;
 
-			if (lowerName.Find(lowerQuery) < 0)
+		for (size_t i = 0; i < m_fileIndex.size(); ++i)
+		{
+			FileEntry& entry = m_fileIndex[i];
+			if (entry.lowerName.IsEmpty() && !entry.displayName.IsEmpty())
+			{
+				entry.lowerName = entry.displayName; // 初回だけ作ってキャッシュする
+				entry.lowerName.MakeLower();
+			}
+
+			int score = 0;
+			if (!MatchName(entry.lowerName, terms, method, score))
 			{
 				continue;
 			}
+			hits.push_back({ score, entry.lowerName.GetLength(), i });
+		}
 
-			CString key = entry.fullPath;
-			key.MakeLower();
-			if (addedPaths.find(key) != addedPaths.end())
+		// 並び順: 一致の良さ(score) → 名前が短い順 → インデックス順。
+		auto better = [](const Hit& a, const Hit& b)
+		{
+			if (a.score != b.score) return a.score < b.score;
+			if (a.nameLength != b.nameLength) return a.nameLength < b.nameLength;
+			return a.index < b.index;
+		};
+
+		// 履歴と重複する分を見込んで少し多めに上位を確定させる。
+		const size_t take = (std::min)(hits.size(), remaining + addedPaths.size());
+		std::partial_sort(hits.begin(), hits.begin() + take, hits.end(), better);
+
+		for (size_t k = 0; k < take && m_filteredResults.size() < static_cast<size_t>(kMaxDisplayResults); ++k)
+		{
+			const FileEntry& entry = m_fileIndex[hits[k].index];
+			if (!addedPaths.empty())
 			{
-				continue;
+				CString key = entry.fullPath;
+				key.MakeLower();
+				if (addedPaths.find(key) != addedPaths.end())
+				{
+					continue;
+				}
 			}
-
 			m_filteredResults.push_back(entry);
-			if (static_cast<int>(m_filteredResults.size()) >= kMaxDisplayResults)
-			{
-				break;
-			}
 		}
 	}
 
@@ -1423,6 +1460,135 @@ void CgleipnirDlg::UpdateSearchResults(const CString& query)
 	{
 		m_listResults.SetCurSel(0);
 	}
+}
+
+void CgleipnirDlg::LoadSearchSettings()
+{
+	const CString configPath = GetSettingsFilePath();
+	TCHAR buf[128] = { 0 };
+
+	::GetPrivateProfileString(_T("Common"), _T("SearchMethodNormal"), _T(""), buf, _countof(buf), configPath);
+	m_searchMethodNormal = ParseSearchMethod(buf, SearchMethod::Substring);
+
+	::GetPrivateProfileString(_T("Common"), _T("SearchMethodFolderExpand"), _T(""), buf, _countof(buf), configPath);
+	m_searchMethodFolderExpand = ParseSearchMethod(buf, SearchMethod::Skip);
+}
+
+// static
+SearchMethod CgleipnirDlg::ParseSearchMethod(const CString& value, SearchMethod defaultMethod)
+{
+	// 英語の値(prefix/substring/skip)に加え、画面表示と同じ日本語名も受け付ける。
+	CString v = value;
+	v.Trim();
+	if (v.CompareNoCase(_T("prefix")) == 0 || v == _T("先頭部分一致"))
+	{
+		return SearchMethod::Prefix;
+	}
+	if (v.CompareNoCase(_T("substring")) == 0 || v == _T("中間部分一致"))
+	{
+		return SearchMethod::Substring;
+	}
+	if (v.CompareNoCase(_T("skip")) == 0 || v == _T("スキップマッチング"))
+	{
+		return SearchMethod::Skip;
+	}
+	return defaultMethod;
+}
+
+// static
+LPCTSTR CgleipnirDlg::SearchMethodToConfigValue(SearchMethod method)
+{
+	switch (method)
+	{
+	case SearchMethod::Prefix:    return _T("prefix");
+	case SearchMethod::Skip:      return _T("skip");
+	case SearchMethod::Substring:
+	default:                      return _T("substring");
+	}
+}
+
+// static
+std::vector<CString> CgleipnirDlg::SplitQueryTerms(const CString& query)
+{
+	std::vector<CString> terms;
+	CString lower = query;
+	lower.Replace(_T("\x3000"), _T(" ")); // 全角スペースも区切りとして扱う
+	lower.MakeLower();
+
+	int pos = 0;
+	CString token = lower.Tokenize(_T(" \t"), pos);
+	while (!token.IsEmpty())
+	{
+		terms.push_back(token);
+		token = lower.Tokenize(_T(" \t"), pos);
+	}
+	return terms;
+}
+
+// static
+bool CgleipnirDlg::MatchName(const CString& lowerName, const std::vector<CString>& terms,
+	SearchMethod method, int& score)
+{
+	// 1語ごとの評価値(小さいほど良い)を合計する。各語の評価は
+	//   区分 × 100000 + 一致開始位置 × 100 + (スキップ時の)間に挟まった文字数
+	// 区分: 0 = 名前の先頭から連続一致、1 = 途中で連続一致、2 = 飛び飛びの一致
+	// つまり「連続して一致」→「先頭に近い位置で一致」→「それ以外」の順に並ぶ。
+	score = 0;
+	const int nameLen = lowerName.GetLength();
+	LPCTSTR name = lowerName.GetString();
+
+	for (const CString& term : terms)
+	{
+		const int termLen = term.GetLength();
+		int category = 0;
+		int firstPos = 0;
+		int gaps = 0;
+
+		const int found = lowerName.Find(term);
+		if (found == 0)
+		{
+			category = 0;
+		}
+		else if (found > 0 && method != SearchMethod::Prefix)
+		{
+			category = 1;
+			firstPos = found;
+		}
+		else if (method == SearchMethod::Skip)
+		{
+			// 入力の各文字を、名前の中で左から順に探す(最初に見つかった位置を使う)。
+			int ni = 0;
+			int first = -1;
+			int last = -1;
+			for (int ti = 0; ti < termLen; ++ti)
+			{
+				while (ni < nameLen && name[ni] != term[ti])
+				{
+					++ni;
+				}
+				if (ni >= nameLen)
+				{
+					return false;
+				}
+				if (first < 0)
+				{
+					first = ni;
+				}
+				last = ni;
+				++ni;
+			}
+			category = 2;
+			firstPos = first;
+			gaps = (last - first + 1) - termLen;
+		}
+		else
+		{
+			return false;
+		}
+
+		score += category * 100000 + (std::min)(firstPos, 999) * 100 + (std::min)(gaps, 99);
+	}
+	return true;
 }
 
 void CgleipnirDlg::LaunchSelectedResult()

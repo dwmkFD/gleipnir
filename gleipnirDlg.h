@@ -38,6 +38,15 @@ struct FileEntry
 {
 	CString fullPath;     // フルパス(起動・検索対象)
 	CString displayName;  // ファイル名のみ(検索・表示用)
+	CString lowerName;    // displayName の小文字版(検索用キャッシュ。初回検索時に作成)
+};
+
+// 検索方式(設定「検索方式」。config.ini には prefix / substring / skip で保存)
+enum class SearchMethod
+{
+	Prefix,     // 先頭部分一致: 名前が入力語で始まる
+	Substring,  // 中間部分一致: 名前のどこかに入力語を含む
+	Skip,       // スキップマッチング: 入力語の文字が順番どおりに含まれる(間に他の文字があってよい)
 };
 
 // instant.ini の [InstantCommand] セクションの1エントリ
@@ -125,6 +134,22 @@ protected:
 
 	void CreateDynamicControls();
 	void UpdateSearchResults(const CString& query);
+
+	// 検索方式の設定(config.ini [Common] SearchMethodNormal / SearchMethodFolderExpand)。
+	// フォルダ展開時の方式は、フォルダ展開機能の実装時に使う(現状は読み込みのみ)。
+	SearchMethod m_searchMethodNormal = SearchMethod::Substring;
+	SearchMethod m_searchMethodFolderExpand = SearchMethod::Skip;
+	void LoadSearchSettings();
+public:
+	static SearchMethod ParseSearchMethod(const CString& value, SearchMethod defaultMethod);
+	static LPCTSTR SearchMethodToConfigValue(SearchMethod method);
+	// 入力を空白(半角/全角)で区切った語の配列にし、小文字化する(AND検索用)。
+	static std::vector<CString> SplitQueryTerms(const CString& query);
+	// 小文字化済みの名前が全ての語に一致するか判定し、一致すれば score に
+	// 並び順用の値(小さいほど上位)を返す。
+	static bool MatchName(const CString& lowerName, const std::vector<CString>& terms,
+		SearchMethod method, int& score);
+protected:
 	void LaunchSelectedResult();
 	// 起動に成功したパスを履歴の先頭に記録し、data\history.txt へ保存する。
 	void RecordLaunchHistory(const CString& fullPath);

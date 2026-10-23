@@ -6,6 +6,34 @@
 #include "gleipnir.h"
 #include "afxdialogex.h"
 #include "CSettingCommonDlg.h"
+#include "gleipnirDlg.h"   // SearchMethod と config.ini 値の変換
+
+namespace
+{
+	// コンボの並び(番号)と検索方式の対応
+	const SearchMethod kSearchMethodsByIndex[] = {
+		SearchMethod::Prefix,     // 0: 先頭部分一致
+		SearchMethod::Substring,  // 1: 中間部分一致
+		SearchMethod::Skip,       // 2: スキップマッチング
+	};
+
+	int SearchMethodToIndex(SearchMethod method)
+	{
+		for (int i = 0; i < static_cast<int>(_countof(kSearchMethodsByIndex)); ++i)
+		{
+			if (kSearchMethodsByIndex[i] == method)
+			{
+				return i;
+			}
+		}
+		return 1;
+	}
+
+	SearchMethod IndexToSearchMethod(int index, SearchMethod defaultMethod)
+	{
+		return (index >= 0 && index < static_cast<int>(_countof(kSearchMethodsByIndex))) ? kSearchMethodsByIndex[index] : defaultMethod;
+	}
+}
 
 
 // CSettingCommonDlg ダイアログ
@@ -17,6 +45,8 @@ CSettingCommonDlg::CSettingCommonDlg(CWnd* pParent /*=nullptr*/)
 	, m_maxEnumCount(50)
 	, m_autoDeleteBrokenPath(FALSE)
 	, m_candidateIconSel(0)
+	, m_searchMethodNormalSel(1)
+	, m_searchMethodFolderExpandSel(2)
 	, m_clearInputOnHide(TRUE)
 {
 
@@ -33,8 +63,8 @@ void CSettingCommonDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Text(pDX, IDC_EDIT3, m_parentFolderExpandKey);
 	DDX_Text(pDX, IDC_EDIT4, m_selectDownKey);
 	DDX_Text(pDX, IDC_EDIT5, m_selectUpKey);
-	DDX_CBString(pDX, IDC_COMBO1, m_searchMethodNormal);
-	DDX_CBString(pDX, IDC_COMBO2, m_searchMethodFolderExpand);
+	DDX_CBIndex(pDX, IDC_COMBO1, m_searchMethodNormalSel);
+	DDX_CBIndex(pDX, IDC_COMBO2, m_searchMethodFolderExpandSel);
 	DDX_CBIndex(pDX, IDC_COMBO3, m_candidateIconSel);
 	DDX_Text(pDX, IDC_EDIT6, m_maxEnumCount);
 	DDV_MinMaxInt(pDX, m_maxEnumCount, 0, 100000);
@@ -62,6 +92,20 @@ BOOL CSettingCommonDlg::OnInitDialog()
 	if (pHotKeyWnd != nullptr)
 	{
 		pHotKeyWnd->EnableWindow(FALSE);
+	}
+
+	// 検索方式: 3択(並びは kSearchMethodsByIndex と対応させる)。
+	const UINT searchCombos[] = { IDC_COMBO1, IDC_COMBO2 };
+	for (UINT id : searchCombos)
+	{
+		CComboBox* pCombo = static_cast<CComboBox*>(GetDlgItem(id));
+		if (pCombo != nullptr)
+		{
+			pCombo->ResetContent();
+			pCombo->AddString(_T("先頭部分一致"));       // 0
+			pCombo->AddString(_T("中間部分一致"));       // 1
+			pCombo->AddString(_T("スキップマッチング")); // 2
+		}
 	}
 
 	// 候補リストのアイコン: 表示/非表示の二択(並びは CBIndex と対応させる)。
@@ -111,10 +155,10 @@ void CSettingCommonDlg::LoadFromConfig(const CString& configPath)
 	m_selectUpKey = buf;
 
 	::GetPrivateProfileString(_T("Common"), _T("SearchMethodNormal"), _T(""), buf, _countof(buf), configPath);
-	m_searchMethodNormal = buf;
+	m_searchMethodNormalSel = SearchMethodToIndex(CgleipnirDlg::ParseSearchMethod(buf, SearchMethod::Substring));
 
 	::GetPrivateProfileString(_T("Common"), _T("SearchMethodFolderExpand"), _T(""), buf, _countof(buf), configPath);
-	m_searchMethodFolderExpand = buf;
+	m_searchMethodFolderExpandSel = SearchMethodToIndex(CgleipnirDlg::ParseSearchMethod(buf, SearchMethod::Skip));
 
 	// "0"/"非表示" のときだけ非表示。未設定・その他の値は既定の「表示」。
 	::GetPrivateProfileString(_T("Common"), _T("CandidateIcon"), _T("1"), buf, _countof(buf), configPath);
@@ -151,8 +195,10 @@ void CSettingCommonDlg::SaveToConfig(const CString& configPath)
 	::WritePrivateProfileString(_T("Common"), _T("ParentFolderExpandKey"), m_parentFolderExpandKey, configPath);
 	::WritePrivateProfileString(_T("Common"), _T("SelectDownKey"), m_selectDownKey, configPath);
 	::WritePrivateProfileString(_T("Common"), _T("SelectUpKey"), m_selectUpKey, configPath);
-	::WritePrivateProfileString(_T("Common"), _T("SearchMethodNormal"), m_searchMethodNormal, configPath);
-	::WritePrivateProfileString(_T("Common"), _T("SearchMethodFolderExpand"), m_searchMethodFolderExpand, configPath);
+	::WritePrivateProfileString(_T("Common"), _T("SearchMethodNormal"),
+		CgleipnirDlg::SearchMethodToConfigValue(IndexToSearchMethod(m_searchMethodNormalSel, SearchMethod::Substring)), configPath);
+	::WritePrivateProfileString(_T("Common"), _T("SearchMethodFolderExpand"),
+		CgleipnirDlg::SearchMethodToConfigValue(IndexToSearchMethod(m_searchMethodFolderExpandSel, SearchMethod::Skip)), configPath);
 	::WritePrivateProfileString(_T("Common"), _T("CandidateIcon"), (m_candidateIconSel == 1) ? _T("0") : _T("1"), configPath);
 
 	CString numBuf;
