@@ -121,6 +121,8 @@ BOOL CSettingCommonDlg::OnInitDialog()
 	// フォルダ展開キー・親フォルダ展開キー: 押したキーをそのまま割り当てとして記録する欄。
 	m_editFolderExpandKey.SubclassDlgItem(IDC_EDIT2, this);
 	m_editParentFolderExpandKey.SubclassDlgItem(IDC_EDIT3, this);
+	m_editSelectDownKey.SubclassDlgItem(IDC_EDIT4, this);
+	m_editSelectUpKey.SubclassDlgItem(IDC_EDIT5, this);
 
 	// 書式や既定値を、空欄時の薄字ヒント(キューバナー)で示す。
 	// 空欄のままなら既定値(Ctrl+F / Ctrl+B、緑文字・黒背景・メイリオ太字)が使われる。
@@ -128,6 +130,8 @@ BOOL CSettingCommonDlg::OnInitDialog()
 	const CueBanner cues[] = {
 		{ IDC_EDIT2, L"キーを押して設定(空欄=Ctrl+F)" },
 		{ IDC_EDIT3, L"キーを押して設定(空欄=Ctrl+B)" },
+		{ IDC_EDIT4, L"空欄=Ctrl+N" },
+		{ IDC_EDIT5, L"空欄=Ctrl+P" },
 		{ IDC_EDIT7, L"#00FF00 または 0,255,0" },
 		{ IDC_EDIT8, L"#000000 または 0,0,0" },
 		{ IDC_EDIT9, L"Meiryo,10,bold" },
@@ -156,10 +160,10 @@ void CSettingCommonDlg::LoadFromConfig(const CString& configPath)
 	m_parentFolderExpandKey = KeyBindingText::Format(KeyBindingText::ParseOr(buf, DefaultParentFolderExpandKey()));
 
 	::GetPrivateProfileString(_T("Common"), _T("SelectDownKey"), _T(""), buf, _countof(buf), configPath);
-	m_selectDownKey = buf;
+	m_selectDownKey = KeyBindingText::Format(KeyBindingText::ParseOr(buf, DefaultSelectDownKey()));
 
 	::GetPrivateProfileString(_T("Common"), _T("SelectUpKey"), _T(""), buf, _countof(buf), configPath);
-	m_selectUpKey = buf;
+	m_selectUpKey = KeyBindingText::Format(KeyBindingText::ParseOr(buf, DefaultSelectUpKey()));
 
 	::GetPrivateProfileString(_T("Common"), _T("SearchMethodNormal"), _T(""), buf, _countof(buf), configPath);
 	m_searchMethodNormalSel = SearchMethodToIndex(CgleipnirDlg::ParseSearchMethod(buf, SearchMethod::Substring));
@@ -203,8 +207,10 @@ void CSettingCommonDlg::SaveToConfig(const CString& configPath)
 		KeyBindingText::Format(KeyBindingText::Parse(m_folderExpandKey)), configPath);
 	::WritePrivateProfileString(_T("Common"), _T("ParentFolderExpandKey"),
 		KeyBindingText::Format(KeyBindingText::Parse(m_parentFolderExpandKey)), configPath);
-	::WritePrivateProfileString(_T("Common"), _T("SelectDownKey"), m_selectDownKey, configPath);
-	::WritePrivateProfileString(_T("Common"), _T("SelectUpKey"), m_selectUpKey, configPath);
+	::WritePrivateProfileString(_T("Common"), _T("SelectDownKey"),
+		KeyBindingText::Format(KeyBindingText::Parse(m_selectDownKey)), configPath);
+	::WritePrivateProfileString(_T("Common"), _T("SelectUpKey"),
+		KeyBindingText::Format(KeyBindingText::Parse(m_selectUpKey)), configPath);
 	::WritePrivateProfileString(_T("Common"), _T("SearchMethodNormal"),
 		CgleipnirDlg::SearchMethodToConfigValue(IndexToSearchMethod(m_searchMethodNormalSel, SearchMethod::Substring)), configPath);
 	::WritePrivateProfileString(_T("Common"), _T("SearchMethodFolderExpand"),
@@ -228,21 +234,42 @@ void CSettingCommonDlg::SaveToConfig(const CString& configPath)
 
 bool CSettingCommonDlg::ValidateBeforeSave()
 {
-	CString expandText;
-	CString parentText;
-	GetDlgItemText(IDC_EDIT2, expandText);
-	GetDlgItemText(IDC_EDIT3, parentText);
-
-	const KeyBinding expandKey = KeyBindingText::ParseOr(expandText, DefaultFolderExpandKey());
-	const KeyBinding parentKey = KeyBindingText::ParseOr(parentText, DefaultParentFolderExpandKey());
-	if (expandKey == parentKey)
+	// 4つのキー割り当て(空欄は既定値として扱う)に重複が無いか確認する。
+	struct KeyField
 	{
-		CString msg;
-		msg.Format(_T("フォルダ展開キーと親フォルダ展開キーが同じ(%s)です。\n別のキーを設定してください。"),
-			static_cast<LPCTSTR>(KeyBindingText::Format(expandKey)));
-		MessageBox(msg, _T("gleipnir"), MB_OK | MB_ICONWARNING);
-		GetDlgItem(IDC_EDIT3)->SetFocus();
-		return false;
+		UINT id;
+		LPCTSTR label;
+		KeyBinding (*defaultKey)();
+		KeyBinding key;
+	};
+	KeyField fields[] = {
+		{ IDC_EDIT2, _T("フォルダ展開"), &DefaultFolderExpandKey, KeyBinding() },
+		{ IDC_EDIT3, _T("親フォルダ展開"), &DefaultParentFolderExpandKey, KeyBinding() },
+		{ IDC_EDIT4, _T("下選択"), &DefaultSelectDownKey, KeyBinding() },
+		{ IDC_EDIT5, _T("上選択"), &DefaultSelectUpKey, KeyBinding() },
+	};
+	for (KeyField& f : fields)
+	{
+		CString text;
+		GetDlgItemText(f.id, text);
+		f.key = KeyBindingText::ParseOr(text, f.defaultKey());
+	}
+
+	for (size_t i = 0; i < _countof(fields); ++i)
+	{
+		for (size_t j = i + 1; j < _countof(fields); ++j)
+		{
+			if (fields[i].key == fields[j].key)
+			{
+				CString msg;
+				msg.Format(_T("「%s」と「%s」のキーが同じ(%s)です。\n別のキーを設定してください。"),
+					fields[i].label, fields[j].label,
+					static_cast<LPCTSTR>(KeyBindingText::Format(fields[i].key)));
+				MessageBox(msg, _T("gleipnir"), MB_OK | MB_ICONWARNING);
+				GetDlgItem(fields[j].id)->SetFocus();
+				return false;
+			}
+		}
 	}
 	return true;
 }

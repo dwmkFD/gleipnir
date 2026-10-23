@@ -573,12 +573,13 @@ void CgleipnirDlg::OnSysCommand(UINT nID, LPARAM lParam)
 
 BOOL CgleipnirDlg::PreTranslateMessage(MSG* pMsg)
 {
-	// フォルダ展開キー / 親フォルダ展開キー(設定画面で割り当て。既定 Ctrl+F / Ctrl+B)。
+	// 設定画面で割り当てたキー(フォルダ展開 Ctrl+F / 親フォルダ展開 Ctrl+B /
+	// 下選択 Ctrl+N / 上選択 Ctrl+P が既定)。
 	// Alt との同時押しは WM_SYSKEYDOWN で届く。
 	if ((pMsg->message == WM_KEYDOWN || pMsg->message == WM_SYSKEYDOWN)
 		&& (GetFocus() == GetDlgItem(IDC_EDIT1) || GetFocus() == &m_listResults))
 	{
-		if (HandleFolderExpandKey(pMsg))
+		if (HandleAssignedKey(pMsg))
 		{
 			return TRUE;
 		}
@@ -1485,9 +1486,22 @@ void CgleipnirDlg::UpdateSearchResults(const CString& query)
 	}
 }
 
-bool CgleipnirDlg::HandleFolderExpandKey(const MSG* pMsg)
+bool CgleipnirDlg::HandleAssignedKey(const MSG* pMsg)
 {
 	const UINT vk = static_cast<UINT>(pMsg->wParam);
+
+	// 下選択 / 上選択: 候補リストの選択を移動する(フォーカスは検索欄のまま。
+	// 押しっぱなしの自動リピートでも連続して動く)。選んだ項目は Enter で起動する。
+	if (m_selectDownKey.Matches(vk))
+	{
+		MoveResultSelection(+1);
+		return true;
+	}
+	if (m_selectUpKey.Matches(vk))
+	{
+		MoveResultSelection(-1);
+		return true;
+	}
 
 	// フォルダ展開キー: 選択中の候補がフォルダなら展開する。
 	if (m_folderExpandKey.Matches(vk))
@@ -1527,6 +1541,34 @@ bool CgleipnirDlg::HandleFolderExpandKey(const MSG* pMsg)
 	}
 
 	return false;
+}
+
+void CgleipnirDlg::MoveResultSelection(int delta)
+{
+	const int count = m_listResults.GetCount();
+	if (count <= 0)
+	{
+		return;
+	}
+
+	int sel = m_listResults.GetCurSel();
+	if (sel < 0)
+	{
+		sel = (delta > 0) ? 0 : count - 1;
+	}
+	else
+	{
+		sel += delta;
+		if (sel < 0)
+		{
+			sel = 0;
+		}
+		else if (sel >= count)
+		{
+			sel = count - 1;
+		}
+	}
+	m_listResults.SetCurSel(sel); // 見えない位置なら自動でスクロールされる
 }
 
 bool CgleipnirDlg::ExpandSelectedFolder()
@@ -1769,6 +1811,12 @@ void CgleipnirDlg::LoadSearchSettings()
 
 	::GetPrivateProfileString(_T("Common"), _T("ParentFolderExpandKey"), _T(""), buf, _countof(buf), configPath);
 	m_parentFolderExpandKey = KeyBindingText::ParseOr(buf, DefaultParentFolderExpandKey());
+
+	::GetPrivateProfileString(_T("Common"), _T("SelectDownKey"), _T(""), buf, _countof(buf), configPath);
+	m_selectDownKey = KeyBindingText::ParseOr(buf, DefaultSelectDownKey());
+
+	::GetPrivateProfileString(_T("Common"), _T("SelectUpKey"), _T(""), buf, _countof(buf), configPath);
+	m_selectUpKey = KeyBindingText::ParseOr(buf, DefaultSelectUpKey());
 
 	::GetPrivateProfileString(_T("Common"), _T("SearchMethodNormal"), _T(""), buf, _countof(buf), configPath);
 	m_searchMethodNormal = ParseSearchMethod(buf, SearchMethod::Substring);

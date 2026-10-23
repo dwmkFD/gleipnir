@@ -244,3 +244,5 @@ namespace KeyBindingText
 // 既定のキー割り当て
 inline KeyBinding DefaultFolderExpandKey() { return KeyBindingText::Make('F', true); }       // Ctrl+F
 inline KeyBinding DefaultParentFolderExpandKey() { return KeyBindingText::Make('B', true); } // Ctrl+B
+inline KeyBinding DefaultSelectDownKey() { return KeyBindingText::Make('N', true); }         // Ctrl+N
+inline KeyBinding DefaultSelectUpKey() { return KeyBindingText::Make('P', true); }           // Ctrl+P

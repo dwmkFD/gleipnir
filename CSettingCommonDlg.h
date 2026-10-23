@@ -22,7 +22,7 @@ public:
 	void LoadFromConfig(const CString& configPath);
 	// コントロールの現在値を data\config.ini へ書き込む。
 	void SaveToConfig(const CString& configPath);
-	// 保存前の入力チェック(フォルダ展開キーと親フォルダ展開キーの重複等)。
+	// 保存前の入力チェック(4つのキー割り当ての重複)。
 	// 問題があればメッセージを出して false を返す。
 	bool ValidateBeforeSave();
 
@@ -37,8 +37,10 @@ protected:
 	CString m_parentFolderExpandKey;    // 親フォルダ展開キー(既定: Ctrl+B)
 	CKeyCaptureEdit m_editFolderExpandKey;       // IDC_EDIT2(キーを押して設定する欄)
 	CKeyCaptureEdit m_editParentFolderExpandKey; // IDC_EDIT3
-	CString m_selectDownKey;            // 下選択キー
-	CString m_selectUpKey;              // 上選択キー
+	CString m_selectDownKey;            // 下選択キー(既定: Ctrl+N)
+	CString m_selectUpKey;              // 上選択キー(既定: Ctrl+P)
+	CKeyCaptureEdit m_editSelectDownKey; // IDC_EDIT4
+	CKeyCaptureEdit m_editSelectUpKey;   // IDC_EDIT5
 	// 検索方式(コンボの番号。0=先頭部分一致, 1=中間部分一致, 2=スキップマッチング)。
 	// config.ini には prefix / substring / skip で保存する。
 	int     m_searchMethodNormalSel;       // 通常時(既定: 中間部分一致)

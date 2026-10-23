@@ -145,9 +145,16 @@ protected:
 	// 既定: Ctrl+F / Ctrl+B)。LoadSearchSettings() で一緒に読み込む。
 	KeyBinding m_folderExpandKey = DefaultFolderExpandKey();
 	KeyBinding m_parentFolderExpandKey = DefaultParentFolderExpandKey();
+	// 候補リストの選択を上下に動かすキー(config.ini [Common] SelectDownKey / SelectUpKey。
+	// 既定: Ctrl+N / Ctrl+P)。
+	KeyBinding m_selectDownKey = DefaultSelectDownKey();
+	KeyBinding m_selectUpKey = DefaultSelectUpKey();
 	void LoadSearchSettings();
-	// 押されたキーがフォルダ展開/親フォルダ展開の割り当てなら処理し、TRUE を返す。
-	bool HandleFolderExpandKey(const MSG* pMsg);
+	// 押されたキーが設定画面で割り当てたキー(フォルダ展開/親フォルダ展開/下選択/上選択)
+	// なら処理し、true を返す。
+	bool HandleAssignedKey(const MSG* pMsg);
+	// 候補リストの選択を delta 行動かす(端で止まる。未選択なら先頭/末尾を選ぶ)。
+	void MoveResultSelection(int delta);
 
 	// フォルダ展開。選択中の候補がフォルダなら(キー押下の時点で実在を確認)、
 	// その中身を実際に列挙してリストに表示し、入力欄はその中の絞り込みに使う。
