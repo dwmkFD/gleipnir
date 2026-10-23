@@ -43,6 +43,11 @@ struct FileEntry
 	bool isFolder = false; // フォルダ展開時の列挙でのみ設定(インデックス側では使わない)
 };
 
+// 候補リストの最大列挙数(設定「候補リスト → 最大列挙数」、config.ini [Common] MaxEnumCount)
+constexpr int kDefaultMaxEnumCount = 200;  // 既定(従来の固定値と同じ)
+constexpr int kMinMaxEnumCount = 1;
+constexpr int kMaxMaxEnumCount = 10000;    // リストボックスへの追加が重くなりすぎない上限
+
 // 検索方式(設定「検索方式」。config.ini には prefix / substring / skip で保存)
 enum class SearchMethod
 {
@@ -149,6 +154,8 @@ protected:
 	// 既定: Ctrl+N / Ctrl+P)。
 	KeyBinding m_selectDownKey = DefaultSelectDownKey();
 	KeyBinding m_selectUpKey = DefaultSelectUpKey();
+	// 通常検索で表示する最大件数(起動履歴の一致分を含む。フォルダ展開時は別枠)。
+	int m_maxEnumCount = kDefaultMaxEnumCount;
 	void LoadSearchSettings();
 	// 押されたキーが設定画面で割り当てたキー(フォルダ展開/親フォルダ展開/下選択/上選択)
 	// なら処理し、true を返す。

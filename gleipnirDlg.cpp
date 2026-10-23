@@ -30,9 +30,9 @@ namespace
 	// 変換されてしまうため、vkCode ではなく scanCode で判定している。
 	constexpr WORD SCANCODE_CAPSLOCK = 0x3A;
 
-	// 検索結果リストボックスに表示する最大件数(パフォーマンス配慮)。
-	constexpr int kMaxDisplayResults = 200;
-	constexpr int kMaxFolderExpandResults = 2000; // フォルダ展開時の表示上限
+	// 通常検索の表示件数は設定(m_maxEnumCount、既定200)。
+	// フォルダ展開時はフォルダの中身を一覧する用途のため、設定とは別の固定上限。
+	constexpr int kMaxFolderExpandResults = 2000;
 
 	// Edit Control にこの文字列(大文字小文字区別なし)が入力されたら
 	// スキャンを実行する。
@@ -1409,7 +1409,7 @@ void CgleipnirDlg::UpdateSearchResults(const CString& query)
 		addedPaths.insert(key);
 
 		m_filteredResults.push_back(entry);
-		if (static_cast<int>(m_filteredResults.size()) >= kMaxDisplayResults)
+		if (static_cast<int>(m_filteredResults.size()) >= m_maxEnumCount)
 		{
 			break;
 		}
@@ -1418,7 +1418,8 @@ void CgleipnirDlg::UpdateSearchResults(const CString& query)
 	// 残り枠を、インデックス全体から一致の良い順に埋める。
 	// 全件を判定してから上位だけを並べ替える(先頭から200件で打ち切ると、
 	// 良い一致がインデックスの後ろにある場合に表示されないため)。
-	const size_t remaining = static_cast<size_t>(kMaxDisplayResults) - m_filteredResults.size();
+	const size_t maxCount = static_cast<size_t>(m_maxEnumCount);
+	const size_t remaining = (m_filteredResults.size() < maxCount) ? maxCount - m_filteredResults.size() : 0;
 	if (remaining > 0)
 	{
 		struct Hit
@@ -1458,7 +1459,7 @@ void CgleipnirDlg::UpdateSearchResults(const CString& query)
 		const size_t take = (std::min)(hits.size(), remaining + addedPaths.size());
 		std::partial_sort(hits.begin(), hits.begin() + take, hits.end(), better);
 
-		for (size_t k = 0; k < take && m_filteredResults.size() < static_cast<size_t>(kMaxDisplayResults); ++k)
+		for (size_t k = 0; k < take && m_filteredResults.size() < maxCount; ++k)
 		{
 			const FileEntry& entry = m_fileIndex[hits[k].index];
 			if (!addedPaths.empty())
@@ -1474,11 +1475,14 @@ void CgleipnirDlg::UpdateSearchResults(const CString& query)
 		}
 	}
 
+	m_listResults.SetRedraw(FALSE); // 件数が多いときのちらつき・速度対策
 	for (const auto& entry : m_filteredResults)
 	{
 		CString line = entry.displayName + _T("   [") + entry.fullPath + _T("]");
 		m_listResults.AddString(line);
 	}
+	m_listResults.SetRedraw(TRUE);
+	m_listResults.Invalidate();
 
 	if (m_listResults.GetCount() > 0)
 	{
@@ -1817,6 +1821,10 @@ void CgleipnirDlg::LoadSearchSettings()
 
 	::GetPrivateProfileString(_T("Common"), _T("SelectUpKey"), _T(""), buf, _countof(buf), configPath);
 	m_selectUpKey = KeyBindingText::ParseOr(buf, DefaultSelectUpKey());
+
+	// 最大列挙数(範囲外・未設定は既定の200件)。
+	const int maxEnum = static_cast<int>(::GetPrivateProfileInt(_T("Common"), _T("MaxEnumCount"), kDefaultMaxEnumCount, configPath));
+	m_maxEnumCount = (maxEnum >= kMinMaxEnumCount && maxEnum <= kMaxMaxEnumCount) ? maxEnum : kDefaultMaxEnumCount;
 
 	::GetPrivateProfileString(_T("Common"), _T("SearchMethodNormal"), _T(""), buf, _countof(buf), configPath);
 	m_searchMethodNormal = ParseSearchMethod(buf, SearchMethod::Substring);

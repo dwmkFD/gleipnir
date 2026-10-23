@@ -42,7 +42,7 @@ IMPLEMENT_DYNAMIC(CSettingCommonDlg, CDialogEx)
 
 CSettingCommonDlg::CSettingCommonDlg(CWnd* pParent /*=nullptr*/)
 	: CDialogEx(IDD_SETTING_DIALOG_COMMON, pParent)
-	, m_maxEnumCount(50)
+	, m_maxEnumCount(kDefaultMaxEnumCount)
 	, m_autoDeleteBrokenPath(FALSE)
 	, m_candidateIconSel(0)
 	, m_searchMethodNormalSel(1)
@@ -67,7 +67,7 @@ void CSettingCommonDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_CBIndex(pDX, IDC_COMBO2, m_searchMethodFolderExpandSel);
 	DDX_CBIndex(pDX, IDC_COMBO3, m_candidateIconSel);
 	DDX_Text(pDX, IDC_EDIT6, m_maxEnumCount);
-	DDV_MinMaxInt(pDX, m_maxEnumCount, 0, 100000);
+	DDV_MinMaxInt(pDX, m_maxEnumCount, kMinMaxEnumCount, kMaxMaxEnumCount);
 	DDX_Check(pDX, IDC_CHECK1, m_autoDeleteBrokenPath);
 	DDX_Text(pDX, IDC_EDIT7, m_textColor);
 	DDX_Text(pDX, IDC_EDIT8, m_backgroundColor);
@@ -116,6 +116,13 @@ BOOL CSettingCommonDlg::OnInitDialog()
 		pIconCombo->AddString(_T("表示"));   // 0
 		pIconCombo->AddString(_T("非表示")); // 1
 		pIconCombo->SetCurSel(0);
+	}
+
+	// 最大列挙数は数字だけ入力できるようにする。
+	CWnd* pMaxEnum = GetDlgItem(IDC_EDIT6);
+	if (pMaxEnum != nullptr)
+	{
+		pMaxEnum->ModifyStyle(0, ES_NUMBER);
 	}
 
 	// フォルダ展開キー・親フォルダ展開キー: 押したキーをそのまま割り当てとして記録する欄。
@@ -179,7 +186,12 @@ void CSettingCommonDlg::LoadFromConfig(const CString& configPath)
 		m_candidateIconSel = (v == _T("0") || v == _T("非表示")) ? 1 : 0;
 	}
 
-	m_maxEnumCount = ::GetPrivateProfileInt(_T("Common"), _T("MaxEnumCount"), 50, configPath);
+	// 未設定・範囲外は既定の200件(メイン画面と同じ解釈)。
+	m_maxEnumCount = static_cast<int>(::GetPrivateProfileInt(_T("Common"), _T("MaxEnumCount"), kDefaultMaxEnumCount, configPath));
+	if (m_maxEnumCount < kMinMaxEnumCount || m_maxEnumCount > kMaxMaxEnumCount)
+	{
+		m_maxEnumCount = kDefaultMaxEnumCount;
+	}
 	m_autoDeleteBrokenPath = ::GetPrivateProfileInt(_T("Common"), _T("AutoDeleteBrokenPath"), 0, configPath) ? TRUE : FALSE;
 
 	::GetPrivateProfileString(_T("Common"), _T("TextColor"), _T(""), buf, _countof(buf), configPath);
@@ -234,6 +246,13 @@ void CSettingCommonDlg::SaveToConfig(const CString& configPath)
 
 bool CSettingCommonDlg::ValidateBeforeSave()
 {
+	// 数値欄(最大列挙数 1〜10000)などの DDV チェック。範囲外なら MFC が
+	// メッセージを出して該当欄にフォーカスを移すので、保存せずに戻る。
+	if (!UpdateData(TRUE))
+	{
+		return false;
+	}
+
 	// 4つのキー割り当て(空欄は既定値として扱う)に重複が無いか確認する。
 	struct KeyField
 	{
