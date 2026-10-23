@@ -473,3 +473,8 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
   太くした簡略版。トレイ/タイトルバーのアイコンは`LoadIcon`経由(32px縮小)で
   現状十分だが、気になれば`LoadImage`で16pxを明示ロードする余地あり。
 - 2026-10-23: instant.iniのコマンドライン本体を非常駐化(キーワードのみ保持、実行時に読み直し→上書き消去)。
+- 2026-10-23: 非表示時(Caps Lock/×/最小化)に入力中文字列・候補をクリアする動作を追加
+  (`HideLauncherWindow()`)。設定`[Common] ClearInputOnHide`(既定1、0で従来動作)を
+  config.iniから都度読み出す。`CSettingCommonDlg`に`m_clearInputOnHide`と
+  Load/Saveを追加済みで、設定画面のチェックボックスは未作成(リソース追加後に
+  `DoDataExchange`へ`DDX_Check`を足すだけで連動可能)。動作未確認。

@@ -41,6 +41,11 @@ protected:
 	CString m_textColor;                // 文字色
 	CString m_backgroundColor;          // 背景色
 	CString m_fontName;                 // フォント
+	// 非表示にした時点で入力中の文字列・候補をクリアするか(既定: TRUE)。
+	// 画面リソース未作成のため、現状はconfig.iniの読み書きのみ(DDX未接続)。
+	// リソース追加後、DoDataExchangeに DDX_Check(pDX, <チェックボックスID>,
+	// m_clearInputOnHide); を追加すれば画面と連動する。
+	BOOL    m_clearInputOnHide;
 
 	DECLARE_MESSAGE_MAP()
 };

@@ -375,14 +375,14 @@ void CgleipnirDlg::OnClose()
 {
 	// ×ボタン等でウィンドウを閉じる操作では、アプリを終了させずタスクトレイに隠す。
 	// 終了はタスクトレイアイコンの右クリックメニューから行う。
-	ShowWindow(SW_HIDE);
+	HideLauncherWindow();
 }
 
 void CgleipnirDlg::OnSysCommand(UINT nID, LPARAM lParam)
 {
 	if ((nID & 0xFFF0) == SC_MINIMIZE)
 	{
-		ShowWindow(SW_HIDE);
+		HideLauncherWindow();
 		return;
 	}
 
@@ -699,11 +699,29 @@ void CgleipnirDlg::ShowTrayBalloon(const CString& title, const CString& text)
 	Shell_NotifyIcon(NIM_MODIFY, &nid);
 }
 
+void CgleipnirDlg::HideLauncherWindow()
+{
+	// config.ini [Common] ClearInputOnHide (既定: 1)。
+	// 0 を指定した場合のみ、非表示にしても入力中の文字列・候補を残す。
+	// 設定ダイアログからの変更を即座に反映できるよう、都度読み出す。
+	const bool clearOnHide =
+		::GetPrivateProfileInt(_T("Common"), _T("ClearInputOnHide"), 1, GetSettingsFilePath()) != 0;
+
+	if (clearOnHide)
+	{
+		SetDlgItemText(IDC_EDIT1, _T(""));
+		m_listResults.ResetContent();
+		m_filteredResults.clear();
+	}
+
+	ShowWindow(SW_HIDE);
+}
+
 void CgleipnirDlg::ToggleVisibility()
 {
 	if (IsWindowVisible())
 	{
-		ShowWindow(SW_HIDE);
+		HideLauncherWindow();
 	}
 	else
 	{

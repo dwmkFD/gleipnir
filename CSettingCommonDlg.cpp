@@ -16,6 +16,7 @@ CSettingCommonDlg::CSettingCommonDlg(CWnd* pParent /*=nullptr*/)
 	: CDialogEx(IDD_SETTING_DIALOG_COMMON, pParent)
 	, m_maxEnumCount(50)
 	, m_autoDeleteBrokenPath(FALSE)
+	, m_clearInputOnHide(TRUE)
 {
 
 }
@@ -102,6 +103,8 @@ void CSettingCommonDlg::LoadFromConfig(const CString& configPath)
 	::GetPrivateProfileString(_T("Common"), _T("Font"), _T(""), buf, _countof(buf), configPath);
 	m_fontName = buf;
 
+	m_clearInputOnHide = ::GetPrivateProfileInt(_T("Common"), _T("ClearInputOnHide"), 1, configPath) ? TRUE : FALSE;
+
 	// 読み込んだ値をコントロールへ反映する。
 	UpdateData(FALSE);
 }
@@ -129,4 +132,7 @@ void CSettingCommonDlg::SaveToConfig(const CString& configPath)
 	::WritePrivateProfileString(_T("Common"), _T("TextColor"), m_textColor, configPath);
 	::WritePrivateProfileString(_T("Common"), _T("BackgroundColor"), m_backgroundColor, configPath);
 	::WritePrivateProfileString(_T("Common"), _T("Font"), m_fontName, configPath);
+
+	numBuf.Format(_T("%d"), m_clearInputOnHide ? 1 : 0);
+	::WritePrivateProfileString(_T("Common"), _T("ClearInputOnHide"), numBuf, configPath);
 }

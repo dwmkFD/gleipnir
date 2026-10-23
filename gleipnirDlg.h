@@ -109,6 +109,8 @@ protected:
 	void AddTrayIcon();
 	void RemoveTrayIcon();
 	void ShowTrayBalloon(const CString& title, const CString& text);
+	// 入力欄・候補をクリアしてから(設定 ClearInputOnHide が有効な場合)非表示にする。
+	void HideLauncherWindow();
 	void ToggleVisibility();	// ウィンドウの表示/非表示を切り替える
 
 	void CreateDynamicControls();
