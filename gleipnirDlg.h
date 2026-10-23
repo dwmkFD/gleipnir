@@ -156,6 +156,9 @@ protected:
 	KeyBinding m_selectUpKey = DefaultSelectUpKey();
 	// 通常検索で表示する最大件数(起動履歴の一致分を含む。フォルダ展開時は別枠)。
 	int m_maxEnumCount = kDefaultMaxEnumCount;
+	// 選択したパスが存在しなかったとき、インデックス・起動履歴から削除するか
+	// (config.ini [Common] AutoDeleteBrokenPath。既定: 0 = 削除しない)。
+	bool m_autoDeleteBrokenPath = false;
 	void LoadSearchSettings();
 	// 押されたキーが設定画面で割り当てたキー(フォルダ展開/親フォルダ展開/下選択/上選択)
 	// なら処理し、true を返す。
@@ -189,6 +192,16 @@ protected:
 	void LaunchSelectedResult();
 	// 起動に成功したパスを履歴の先頭に記録し、data\history.txt へ保存する。
 	void RecordLaunchHistory(const CString& fullPath);
+
+	// リンク切れ(選択したパスが存在しない)の処理。存在しない旨を表示し、
+	// 設定が有効ならインデックス・起動履歴から削除して検索結果を更新する。
+	// sel は候補リスト上の行番号(削除後の選択位置の復元に使う)。
+	void HandleBrokenPath(const CString& path, int sel);
+	// path を含むドライブ(または UNC の共有)自体にアクセスできるか。
+	// 外付けドライブの取り外し・ネットワーク切断中に誤って削除しないための確認。
+	static bool IsVolumeAvailable(const CString& path);
+	// インデックスと起動履歴から path(フォルダなら配下も)を取り除く。取り除いた件数を返す。
+	size_t RemovePathFromIndex(const CString& path);
 
 	// スキャン実行前の確認ダイアログ。Yesならtrueを返す。
 	bool ConfirmScan(const CString& message);

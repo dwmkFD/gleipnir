@@ -1585,9 +1585,15 @@ bool CgleipnirDlg::ExpandSelectedFolder()
 
 	// スキャン時には区別せず、ここで初めて実在とフォルダかどうかを確認する。
 	const CString path = m_filteredResults[sel].fullPath;
-	if (!IsDirectoryPath(path))
+	const DWORD attr = ::GetFileAttributes(path);
+	if (attr == INVALID_FILE_ATTRIBUTES)
 	{
-		return false;
+		HandleBrokenPath(path, sel); // 存在しない(リンク切れ)
+		return true;
+	}
+	if ((attr & FILE_ATTRIBUTE_DIRECTORY) == 0)
+	{
+		return false; // ファイルなので展開しない
 	}
 	return ExpandFolder(path);
 }
@@ -1826,6 +1832,9 @@ void CgleipnirDlg::LoadSearchSettings()
 	const int maxEnum = static_cast<int>(::GetPrivateProfileInt(_T("Common"), _T("MaxEnumCount"), kDefaultMaxEnumCount, configPath));
 	m_maxEnumCount = (maxEnum >= kMinMaxEnumCount && maxEnum <= kMaxMaxEnumCount) ? maxEnum : kDefaultMaxEnumCount;
 
+	// リンク切れパスの自動削除(既定: 無効)。
+	m_autoDeleteBrokenPath = ::GetPrivateProfileInt(_T("Common"), _T("AutoDeleteBrokenPath"), 0, configPath) != 0;
+
 	::GetPrivateProfileString(_T("Common"), _T("SearchMethodNormal"), _T(""), buf, _countof(buf), configPath);
 	m_searchMethodNormal = ParseSearchMethod(buf, SearchMethod::Substring);
 
@@ -1958,7 +1967,14 @@ void CgleipnirDlg::LaunchSelectedResult()
 		return;
 	}
 
-	const CString& path = m_filteredResults[sel].fullPath;
+	const CString path = m_filteredResults[sel].fullPath; // HandleBrokenPath で一覧が作り直されるのでコピー
+
+	// 起動前に存在を確認する(削除・移動済みのパスはここで検出する)。
+	if (::GetFileAttributes(path) == INVALID_FILE_ATTRIBUTES)
+	{
+		HandleBrokenPath(path, sel);
+		return;
+	}
 
 	HINSTANCE hResult = ::ShellExecute(nullptr, _T("open"), path, nullptr, nullptr, SW_SHOWNORMAL);
 	if (reinterpret_cast<INT_PTR>(hResult) > 32)
@@ -1973,6 +1989,140 @@ void CgleipnirDlg::LaunchSelectedResult()
 		m_filteredResults.clear();
 		ShowWindow(SW_HIDE);
 	}
+}
+
+void CgleipnirDlg::HandleBrokenPath(const CString& path, int sel)
+{
+	CString msg;
+	msg.Format(_T("ファイルまたはフォルダが見つかりません。\n\n%s"), static_cast<LPCTSTR>(path));
+
+	bool removed = false;
+	if (!IsVolumeAvailable(path))
+	{
+		// ドライブ自体が見えない(外付けの取り外し・ネットワーク切断等)場合は、
+		// 一時的な可能性があるので設定に関わらず削除しない。
+		msg += _T("\n\nドライブまたはネットワークの共有にアクセスできません。")
+			_T("\n接続を確認してください(インデックスからは削除していません)。");
+	}
+	else if (m_autoDeleteBrokenPath)
+	{
+		const size_t count = RemovePathFromIndex(path);
+		removed = true;
+		CString detail;
+		if (count > 1)
+		{
+			detail.Format(_T("\n\nインデックスから削除しました(配下を含め %zu 件)。"), count);
+		}
+		else
+		{
+			detail = _T("\n\nインデックスから削除しました。");
+		}
+		msg += detail;
+	}
+	else
+	{
+		msg += _T("\n\n(設定の「使用中にリンク切れパスを自動削除する」を有効にすると、")
+			_T("\nこのような項目をインデックスから自動で削除できます。再スキャンでも更新されます)");
+	}
+
+	MessageBox(msg, _T("gleipnir"), MB_OK | MB_ICONWARNING);
+
+	// フォルダ展開中の一覧は実際のフォルダの中身なので、設定に関わらず取り除く。
+	bool listChanged = removed;
+	if (!m_expandedFolder.IsEmpty())
+	{
+		for (auto it = m_folderItems.begin(); it != m_folderItems.end(); ++it)
+		{
+			if (it->fullPath.CompareNoCase(path) == 0)
+			{
+				m_folderItems.erase(it);
+				listChanged = true;
+				break;
+			}
+		}
+	}
+
+	if (listChanged)
+	{
+		// 現在の入力で検索し直し、同じ位置(無ければ末尾)を選択する。
+		CString query;
+		GetDlgItemText(IDC_EDIT1, query);
+		UpdateSearchResults(query);
+		const int count = m_listResults.GetCount();
+		if (count > 0)
+		{
+			m_listResults.SetCurSel((sel < count) ? sel : count - 1);
+		}
+	}
+
+	GetDlgItem(IDC_EDIT1)->SetFocus();
+}
+
+size_t CgleipnirDlg::RemovePathFromIndex(const CString& path)
+{
+	CString target = path;
+	target.TrimRight(_T('\\'));
+	const CString childPrefix = target + _T("\\"); // フォルダだった場合の配下
+	const int prefixLen = childPrefix.GetLength();
+
+	auto isTarget = [&](const CString& p)
+	{
+		CString q = p;
+		q.TrimRight(_T('\\'));
+		return q.CompareNoCase(target) == 0
+			|| (p.GetLength() > prefixLen && p.Left(prefixLen).CompareNoCase(childPrefix) == 0);
+	};
+
+	const size_t before = m_fileIndex.size();
+	m_fileIndex.erase(std::remove_if(m_fileIndex.begin(), m_fileIndex.end(),
+		[&](const FileEntry& e) { return isTarget(e.fullPath); }), m_fileIndex.end());
+	const size_t removedFromIndex = before - m_fileIndex.size();
+
+	const size_t historyBefore = m_launchHistory.size();
+	m_launchHistory.erase(std::remove_if(m_launchHistory.begin(), m_launchHistory.end(),
+		[&](const CString& h) { return isTarget(h); }), m_launchHistory.end());
+	const bool historyChanged = historyBefore != m_launchHistory.size();
+
+	// 変更はすぐにファイルへ書き戻す(次回起動時にも反映されるように)。
+	// スキャン中に削除した場合も、完了時に新しいインデックスで上書きされるだけで問題ない。
+	if (removedFromIndex > 0)
+	{
+		SaveIndexToFile(GetIndexFilePath(), m_fileIndex);
+	}
+	if (historyChanged)
+	{
+		SaveHistoryToFile(GetHistoryFilePath(), m_launchHistory);
+	}
+
+	return (removedFromIndex > 0) ? removedFromIndex : (historyChanged ? 1 : 0);
+}
+
+// static
+bool CgleipnirDlg::IsVolumeAvailable(const CString& path)
+{
+	CString root;
+	if (path.GetLength() >= 2 && path[1] == _T(':'))
+	{
+		root = path.Left(2) + _T("\\"); // "C:\"
+	}
+	else if (path.Left(2) == _T("\\\\"))
+	{
+		// UNC: "\\server\share\..." → "\\server\share\"
+		const int serverEnd = path.Find(_T('\\'), 2);
+		if (serverEnd < 0)
+		{
+			return false;
+		}
+		const int shareEnd = path.Find(_T('\\'), serverEnd + 1);
+		root = (shareEnd < 0) ? path + _T("\\") : path.Left(shareEnd + 1);
+	}
+	else
+	{
+		return true; // 想定外の形式は判定しない(削除を妨げない)
+	}
+
+	const DWORD attr = ::GetFileAttributes(root);
+	return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
 void CgleipnirDlg::RecordLaunchHistory(const CString& fullPath)
