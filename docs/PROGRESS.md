@@ -134,6 +134,12 @@ VS2022でMFCダイアログベーステンプレートを生成し、それを�
     (`/clip xxxx`の`xxxx`のみが`%A`になる)、という挙動に変更した。
     実装は`SetClipboardText()`(新規)と`TryExecuteInstantCommand()`。
     既定テンプレートに`/clip=@clip %A`の例を追加。**動作未確認**(要ビルド確認)。
+  - **自動実行(Enter不要)**: 入力がキーワードと完全一致し、かつ(1)それより
+    長い別キーワードが前方一致で続かない、(2)コマンドラインに`%A`を含まない
+    場合は、`OnEnChangeEdit1`内で`ShouldAutoExecuteInstant()`により即時実行し
+    ウィンドウを隠す。`%A`を含むコマンド(`/clip`、`/g`等)は引数入力が必要なため
+    従来通りEnterで確定。例: `/n`→即メモ帳起動(ただし`/n2`等が登録されていれば
+    待機)。**動作未確認**。
 - **設定関連のトレイメニュー(暫定)**: 「設定」サブメニューを追加し、
   以下を実行できるようにした。
   - `scan.ini を編集`: 無ければ既定テンプレートを作成した上でメモ帳で開く。
@@ -445,3 +451,13 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
 - 2026-10-23: instant.iniに`@clip`(クリップボードコピー)を追加。最長
   キーワード一致・キーワード直後の空白除去も導入。既定テンプレートに
   `/clip=@clip %A`を追加(`gleipnirDlg.h/.cpp`, `instant.ini.sample`更新)。
+- 2026-10-23: 引数不要インスタントコマンドの自動実行(Enter不要)を追加(`gleipnirDlg.h/.cpp`)。
+- 2026-10-23: 外観を黒背景・緑文字・メイリオ太字に変更(`ApplyAppearance()`、
+  `OnCtlColor`。`gleipnirDlg.h/.cpp`)。色・フォントは現状コード固定で、
+  config.ini の文字色/背景色/フォント設定とは未連動(TODO)。動作未確認。
+- 2026-10-23: アプリアイコンを狼+リボン案(C案)に変更。`res\gleipnir.ico`
+  (16/24/32/48/64/128/256px、PNG圧縮)を差し替えるだけで、`gleipnir.rc`の
+  `IDR_MAINFRAME ICON "res\\gleipnir.ico"`はそのまま。元SVGは
+  `res\gleipnir_icon.svg`(参考、ビルドには不要)。16〜32pxはリボンと枠線を
+  太くした簡略版。トレイ/タイトルバーのアイコンは`LoadIcon`経由(32px縮小)で
+  現状十分だが、気になれば`LoadImage`で16pxを明示ロードする余地あり。

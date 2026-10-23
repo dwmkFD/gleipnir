@@ -172,6 +172,7 @@ void CgleipnirDlg::DoDataExchange(CDataExchange* pDX)
 
 BEGIN_MESSAGE_MAP(CgleipnirDlg, CDialogEx)
 	ON_WM_PAINT()
+	ON_WM_CTLCOLOR()
 	ON_WM_QUERYDRAGICON()
 	ON_WM_DESTROY()
 	ON_WM_CLOSE()
@@ -266,6 +267,65 @@ void CgleipnirDlg::CreateDynamicControls()
 	if (pFont != nullptr)
 	{
 		m_listResults.SetFont(pFont);
+	}
+
+	ApplyAppearance();
+}
+
+void CgleipnirDlg::ApplyAppearance()
+{
+	m_textColor = RGB(0, 255, 0); // 緑
+	m_bgColor = RGB(0, 0, 0);     // 黒
+
+	// 現在のダイアログフォントのサイズを引き継ぎ、書体だけメイリオ太字にする。
+	// メイリオが無い環境ではGDIが近い書体に自動で置き換える。
+	LOGFONT lf = {};
+	CFont* pBase = GetFont();
+	if (pBase != nullptr)
+	{
+		pBase->GetLogFont(&lf);
+	}
+	else
+	{
+		lf.lfHeight = -12;
+	}
+	lf.lfWeight = FW_BOLD;
+	lf.lfCharSet = DEFAULT_CHARSET;
+	lf.lfQuality = CLEARTYPE_QUALITY;
+	_tcscpy_s(lf.lfFaceName, _T("Meiryo"));
+
+	m_font.DeleteObject();
+	m_font.CreateFontIndirect(&lf);
+
+	m_bgBrush.DeleteObject();
+	m_bgBrush.CreateSolidBrush(m_bgColor);
+
+	SetBackgroundColor(m_bgColor);
+
+	GetDlgItem(IDC_EDIT1)->SetFont(&m_font);
+	m_listResults.SetFont(&m_font);
+
+	Invalidate();
+}
+
+HBRUSH CgleipnirDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
+{
+	// ApplyAppearance() 前(ブラシ未作成)は既定動作に任せる。
+	if (m_bgBrush.GetSafeHandle() == nullptr)
+	{
+		return CDialogEx::OnCtlColor(pDC, pWnd, nCtlColor);
+	}
+
+	switch (nCtlColor)
+	{
+	case CTLCOLOR_EDIT:
+	case CTLCOLOR_LISTBOX:
+	case CTLCOLOR_STATIC:
+		pDC->SetTextColor(m_textColor);
+		pDC->SetBkColor(m_bgColor);
+		return static_cast<HBRUSH>(m_bgBrush.GetSafeHandle());
+	default:
+		return CDialogEx::OnCtlColor(pDC, pWnd, nCtlColor);
 	}
 }
 
@@ -556,7 +616,39 @@ void CgleipnirDlg::OnEnChangeEdit1()
 		return;
 	}
 
+	// 引数不要(%Aを含まない)のインスタントコマンドが、入力により一意に定まった
+	// 時点でEnter無しで自動実行する。
+	if (ShouldAutoExecuteInstant(query) && TryExecuteInstantCommand(query))
+	{
+		return;
+	}
+
 	UpdateSearchResults(query);
+}
+
+bool CgleipnirDlg::ShouldAutoExecuteInstant(const CString& input) const
+{
+	const InstantCommandEntry* pMatch = nullptr;
+	for (const auto& cmd : m_instantCommands)
+	{
+		if (cmd.keyword.IsEmpty())
+		{
+			continue;
+		}
+
+		if (cmd.keyword == input)
+		{
+			pMatch = &cmd;
+		}
+		else if (cmd.keyword.GetLength() > input.GetLength() &&
+			cmd.keyword.Left(input.GetLength()) == input)
+		{
+			return false; // より長いキーワードが続く可能性があるので確定しない
+		}
+	}
+
+	// 引数(%A)を受け取るコマンドは、引数入力のためEnterでの確定を待つ。
+	return pMatch != nullptr && pMatch->commandLine.Find(_T("%A")) < 0;
 }
 
 void CgleipnirDlg::OnLbnDblclkListResults()

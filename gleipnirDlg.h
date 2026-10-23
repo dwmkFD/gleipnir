@@ -86,6 +86,14 @@ protected:
 	CListBox m_listResults;
 	CProgressCtrl m_progressBar;
 
+	// 外観(黒背景・緑文字・メイリオ太字)。将来 config.ini の
+	// 文字色/背景色/フォント設定と連動させる想定。
+	CFont m_font;
+	CBrush m_bgBrush;
+	COLORREF m_textColor = RGB(0, 255, 0);
+	COLORREF m_bgColor = RGB(0, 0, 0);
+	void ApplyAppearance();
+
 	// ファイルインデックス
 	std::vector<FileEntry> m_fileIndex;       // 保存/読み込み済みの全件
 	std::vector<FileEntry> m_filteredResults; // 直近の検索結果(リストボックスの行と対応)
@@ -123,6 +131,9 @@ protected:
 	// 該当コマンドを実行してtrueを返す。一致しなければfalseを返す
 	// (呼び出し側は通常の検索結果起動にフォールバックしてよい)。
 	bool TryExecuteInstantCommand(const CString& input);
+	// 入力がinstant.iniのキーワードと完全一致し、他に続く候補が無く、かつ
+	// %Aを含まない(引数不要)場合にtrue。Enter無しで自動実行する判定に使う。
+	bool ShouldAutoExecuteInstant(const CString& input) const;
 	// コマンドライン中の %A / %C / %W / %V / %scanfile / %pathfile /
 	// %initfile / %cmddir を実際の値に置換する。
 	CString ExpandInstantMacros(const CString& commandLine, const CString& arg) const;
@@ -190,6 +201,7 @@ protected:
 	// 生成された、メッセージ割り当て関数
 	virtual BOOL OnInitDialog();
 	afx_msg void OnPaint();
+	afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
 	afx_msg HCURSOR OnQueryDragIcon();
 	afx_msg void OnDestroy();
 	afx_msg void OnClose();
