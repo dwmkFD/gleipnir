@@ -648,7 +648,7 @@ bool CgleipnirDlg::ShouldAutoExecuteInstant(const CString& input) const
 	}
 
 	// 引数(%A)を受け取るコマンドは、引数入力のためEnterでの確定を待つ。
-	return pMatch != nullptr && pMatch->commandLine.Find(_T("%A")) < 0;
+	return pMatch != nullptr && !pMatch->needsArg;
 }
 
 void CgleipnirDlg::OnLbnDblclkListResults()
@@ -764,22 +764,71 @@ void CgleipnirDlg::RequestCancelScan()
 	ShowTrayBalloon(_T("gleipnir"), _T("スキャンのキャンセルを要求しました。"));
 }
 
+namespace
+{
+	// 文字列の内容を0で上書きしてから空にする(秘匿情報のメモリ残留を減らす。
+	// GetBuffer()は共有バッファの場合に複製を作るため、最後の所有者が元の
+	// 領域を上書きすることになる。ベストエフォートの対策)。
+	void WipeCString(CString& s)
+	{
+		int len = s.GetLength();
+		if (len > 0)
+		{
+			LPTSTR p = s.GetBuffer();
+			::SecureZeroMemory(p, static_cast<SIZE_T>(len) * sizeof(TCHAR));
+			s.ReleaseBuffer(0);
+		}
+	}
+
+	// スコープを抜ける時(途中のreturn含む)に、登録した文字列を消去する。
+	class StringWiper
+	{
+	public:
+		void Add(CString& s) { m_items.push_back(&s); }
+		~StringWiper()
+		{
+			for (CString* p : m_items)
+			{
+				WipeCString(*p);
+			}
+		}
+	private:
+		std::vector<CString*> m_items;
+	};
+
+	// instant.ini の [InstantCommand] セクションを取得する。
+	// 使用後は buffer を SecureZeroMemory で消去すること。
+	bool ReadInstantSection(const CString& path, std::vector<TCHAR>& buffer)
+	{
+		if (::GetFileAttributes(path) == INVALID_FILE_ATTRIBUTES)
+		{
+			return false; // instant.ini が無ければ何もしない
+		}
+
+		// GetPrivateProfileSectionは "key=value\0key=value\0...\0\0" 形式で返す
+		buffer.assign(32768, _T('\0'));
+		::GetPrivateProfileSection(_T("InstantCommand"), buffer.data(),
+			static_cast<DWORD>(buffer.size()), path);
+		return true;
+	}
+
+	void WipeBuffer(std::vector<TCHAR>& buffer)
+	{
+		::SecureZeroMemory(buffer.data(), buffer.size() * sizeof(TCHAR));
+	}
+}
+
 void CgleipnirDlg::LoadInstantCommands()
 {
 	m_instantCommands.clear();
 
-	CString path = GetInstantConfigFilePath();
-	if (::GetFileAttributes(path) == INVALID_FILE_ATTRIBUTES)
+	std::vector<TCHAR> buffer;
+	if (!ReadInstantSection(GetInstantConfigFilePath(), buffer))
 	{
-		return; // instant.ini が無ければ何もしない
+		return;
 	}
 
-	// [InstantCommand] セクションを丸ごと取得する。
-	// (GetPrivateProfileSectionは "key=value\0key=value\0...\0\0" 形式で返す)
-	std::vector<TCHAR> buffer(32768);
-	::GetPrivateProfileSection(_T("InstantCommand"), buffer.data(),
-		static_cast<DWORD>(buffer.size()), path);
-
+	// キーワードと「%Aを含むか」だけを保持し、コマンドライン本体は残さない。
 	const TCHAR* p = buffer.data();
 	while (*p != _T('\0'))
 	{
@@ -789,11 +838,47 @@ void CgleipnirDlg::LoadInstantCommands()
 		{
 			InstantCommandEntry entry;
 			entry.keyword = line.Left(eq);
-			entry.commandLine = line.Mid(eq + 1);
+			entry.needsArg = (line.Find(_T("%A"), eq + 1) >= 0);
 			m_instantCommands.push_back(entry);
 		}
 		p += line.GetLength() + 1;
+		WipeCString(line);
 	}
+
+	WipeBuffer(buffer);
+}
+
+bool CgleipnirDlg::ReadInstantCommandLine(const CString& keyword, CString& commandLine) const
+{
+	commandLine.Empty();
+
+	std::vector<TCHAR> buffer;
+	if (!ReadInstantSection(GetInstantConfigFilePath(), buffer))
+	{
+		return false;
+	}
+
+	bool found = false;
+	const TCHAR* p = buffer.data();
+	while (*p != _T('\0'))
+	{
+		CString line = p;
+		int eq = line.Find(_T('='));
+		if (!found && eq > 0 && line.Left(eq) == keyword)
+		{
+			commandLine = line.Mid(eq + 1);
+			found = true;
+		}
+		p += line.GetLength() + 1;
+		WipeCString(line);
+		if (found)
+		{
+			break;
+		}
+	}
+
+	WipeBuffer(buffer);
+	return found;
 }
 
 bool CgleipnirDlg::TryExecuteInstantCommand(const CString& input)
@@ -827,7 +912,29 @@ bool CgleipnirDlg::TryExecuteInstantCommand(const CString& input)
 	CString arg = input.Mid(pBest->keyword.GetLength());
 	arg.TrimLeft();
 
-	CString expanded = ExpandInstantMacros(pBest->commandLine, arg);
+	// コマンドライン本体は常駐させず、実行のたびに instant.ini から読み出し、
+	// 使い終わったら(途中のreturnも含め)上書き消去する。
+	CString commandLine;
+	CString expanded;
+	CString trimmed;
+	CString clipText;
+	CString file;
+	CString params;
+	StringWiper wiper;
+	wiper.Add(arg);
+	wiper.Add(commandLine);
+	wiper.Add(expanded);
+	wiper.Add(trimmed);
+	wiper.Add(clipText);
+	wiper.Add(file);
+	wiper.Add(params);
+
+	if (!ReadInstantCommandLine(pBest->keyword, commandLine))
+	{
+		return true; // instant.ini が削除/変更された場合は何もしない
+	}
+
+	expanded = ExpandInstantMacros(commandLine, arg);
 
 	auto finishAndHide = [this]()
 	{
@@ -838,7 +945,7 @@ bool CgleipnirDlg::TryExecuteInstantCommand(const CString& input)
 	};
 
 	// "@clip 文字列" : 実行せず、文字列をクリップボードへコピーする。
-	CString trimmed = expanded;
+	trimmed = expanded;
 	trimmed.TrimLeft();
 	const int clipLen = 5; // "@clip"
 	if (trimmed.GetLength() >= clipLen &&
@@ -846,18 +953,16 @@ bool CgleipnirDlg::TryExecuteInstantCommand(const CString& input)
 		(trimmed.GetLength() == clipLen ||
 			trimmed[clipLen] == _T(' ') || trimmed[clipLen] == _T('\t')))
 	{
-		CString text = trimmed.Mid(clipLen);
-		text.TrimLeft();
+		clipText = trimmed.Mid(clipLen);
+		clipText.TrimLeft();
 
-		if (SetClipboardText(m_hWnd, text))
+		if (SetClipboardText(m_hWnd, clipText))
 		{
 			finishAndHide();
 		}
 		return true;
 	}
 
-	CString file;
-	CString params;
 	SplitCommandLine(expanded, file, params);
 
 	if (file.IsEmpty())
@@ -923,7 +1028,11 @@ CString CgleipnirDlg::ExpandInstantMacros(const CString& commandLine, const CStr
 	CString result = commandLine;
 
 	result.Replace(_T("%A"), arg);
-	result.Replace(_T("%C"), GetClipboardText(m_hWnd));
+	{
+		CString clip = GetClipboardText(m_hWnd);
+		result.Replace(_T("%C"), clip);
+		WipeCString(clip);
+	}
 
 	CString exeDir = GetExeFolderPath();
 	result.Replace(_T("%W"), exeDir);

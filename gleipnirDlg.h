@@ -43,7 +43,9 @@ struct FileEntry
 struct InstantCommandEntry
 {
 	CString keyword;      // 検索欄の先頭に一致させるキーワード(例: "g/")
-	CString commandLine;  // 実行するコマンドライン(マクロ置換前)
+	bool needsArg;        // コマンドラインに %A を含む(引数入力が必要)か
+	// ※セキュリティ上、コマンドライン本体はメモリに常駐させない。
+	//   実行のたびに instant.ini から読み直し、使用後は上書き消去する。
 };
 
 // スキャン処理の設定・進捗・キャンセル状態を束ねる構造体。
@@ -125,8 +127,12 @@ protected:
 	// スキャン中でなければ何もしない。
 	void RequestCancelScan();
 
-	// instant.ini ([InstantCommand]セクション) を読み込み、m_instantCommands を更新する。
+	// instant.ini ([InstantCommand]セクション) を読み込み、m_instantCommands
+	// (キーワードと引数要否のみ。コマンドライン本体は保持しない)を更新する。
 	void LoadInstantCommands();
+	// 指定キーワードのコマンドライン本体を instant.ini から読み出す。
+	// 呼び出し側は使用後に必ず上書き消去すること。見つかればtrue。
+	bool ReadInstantCommandLine(const CString& keyword, CString& commandLine) const;
 	// 入力文字列がinstant.iniのいずれかのキーワードで始まっていれば、
 	// 該当コマンドを実行してtrueを返す。一致しなければfalseを返す
 	// (呼び出し側は通常の検索結果起動にフォールバックしてよい)。
