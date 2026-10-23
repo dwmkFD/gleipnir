@@ -48,29 +48,41 @@ namespace
 	// instant.ini が無い場合に作成する既定のテンプレート。
 	constexpr LPCTSTR kDefaultInstantIniTemplate =
 		_T("[InstantCommand]\r\n")
+		_T(";\r\n")
 		_T("; [書式]\r\n")
-		_T("; キーワード=コマンドライン\r\n")
+		_T("; 文字列=コマンドライン\r\n")
 		_T(";\r\n")
-		_T("; 検索欄に「キーワード」で始まる文字列を入力してEnterを押すと、\r\n")
-		_T("; キーワードより後ろの文字列が %A に差し込まれた上でコマンドが実行されます。\r\n")
+		_T("; 検索欄に「文字列」で始まる入力をしてEnterを押すと、\r\n")
+		_T("; 文字列より後ろの部分が %A に差し込まれた上でコマンドラインが実行されます。\r\n")
 		_T(";\r\n")
-		_T("; パスにスペースを含む等でダブルクォーテーションが必要な場合、\r\n")
-		_T("; 設定ファイルを読み込む際の仕様上、両端を二重にする必要があります。\r\n")
-		_T("; 例: f/=\"\"C:\\Program Files\\foo\\foo.exe\"\" \"\"%A\"\"\r\n")
+		_T("; このiniファイルを読み込むAPIには、値の両端にあるダブルクォーテーションを\r\n")
+		_T("; 自動で1組だけ取り除く仕様があります。そのため、両端にダブルクォーテーションが\r\n")
+		_T("; 必要なコマンドラインを指定する場合は、\r\n")
+		_T("; /f=\"\"C:\\Program Files\\foo\\foo.exe\"\"\r\n")
+		_T("; のように二重にダブルクォーテーションをつける必要があります。\r\n")
 		_T(";\r\n")
 		_T("; [置換マクロ]\r\n")
-		_T("; %A インスタントコマンドに渡された引数\r\n")
-		_T("; %C クリップボードに格納されている文字列\r\n")
-		_T("; %W gleipnir.exe のあるフォルダのパス\r\n")
-		_T("; %V %W のドライブ部分(例: C:)\r\n")
-		_T("; %scanfile scan.ini のパス\r\n")
-		_T("; %pathfile index.txt のパス\r\n")
-		_T("; %cmddir data フォルダのパス\r\n")
+		_T("; %A          インスタントコマンドに渡された引数。\r\n")
+		_T("; %W          gleipnir.exe のあるフォルダのパス。\r\n")
+		_T("; %V          %W のドライブ部分(例: C:)。\r\n")
+		_T("; %C          クリップボードに格納されている文字列。\r\n")
+		_T("; %scanfile   scan.ini のパス(既定: data\\scan.ini)。\r\n")
+		_T("; %pathfile   インデックスファイルのパス(既定: data\\index.txt)。\r\n")
+		_T("; %initfile   動作設定ファイルのパス(既定: data\\config.ini)。\r\n")
+		_T("; %cmddir     data フォルダのパス。\r\n")
 		_T(";\r\n")
-		_T("n/=notepad\r\n")
-		_T("c/=calc\r\n")
-		_T("e/=explorer\r\n")
-		_T("g/=\"\"http://www.google.com/search?q=%A\"\"\r\n");
+		_T("\r\n")
+		_T("/n=notepad\r\n")
+		_T("/c=calc\r\n")
+		_T("/e=explorer\r\n")
+		_T("\r\n")
+		_T("; クリップボードへのコピー。「/clip xxxx」と入力すると xxxx がコピーされる。\r\n")
+		_T("; コマンドラインが @clip で始まる場合、実行せず後続の文字列をコピーする。\r\n")
+		_T("; 固定文字列の登録も可能(例: /mail=@clip foo@example.com)。\r\n")
+		_T("/clip=@clip %A\r\n")
+		_T("\r\n")
+		_T("; Google(日本語)で検索語を検索する。「/g 検索語」と入力すると実行される。\r\n")
+		_T("/g=\"\"C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe\" \"http://www.google.co.jp/search?ie=utf-8&oe=utf-8&hl=ja&lr=lang_ja&q=%A\"\"\r\n");
 
 	// scan.ini が無い場合に作成する既定のテンプレート。
 	constexpr LPCTSTR kDefaultScanIniTemplate =
@@ -694,6 +706,9 @@ void CgleipnirDlg::LoadInstantCommands()
 
 bool CgleipnirDlg::TryExecuteInstantCommand(const CString& input)
 {
+	// キーワードとの一致は大文字小文字を区別する(本家Fenrirと同様)。
+	// 複数一致する場合(例: "/c" と "/clip")は、最も長いキーワードを採用する。
+	const InstantCommandEntry* pBest = nullptr;
 	for (const auto& cmd : m_instantCommands)
 	{
 		if (cmd.keyword.IsEmpty())
@@ -701,40 +716,114 @@ bool CgleipnirDlg::TryExecuteInstantCommand(const CString& input)
 			continue;
 		}
 
-		// キーワードとの一致は大文字小文字を区別する(本家Fenrirと同様、
-		// "n/" "N/" のように区別して割り当てられるようにするため)。
 		if (input.GetLength() >= cmd.keyword.GetLength() &&
 			input.Left(cmd.keyword.GetLength()) == cmd.keyword)
 		{
-			CString arg = input.Mid(cmd.keyword.GetLength());
-			CString expanded = ExpandInstantMacros(cmd.commandLine, arg);
-
-			CString file;
-			CString params;
-			SplitCommandLine(expanded, file, params);
-
-			if (file.IsEmpty())
+			if (pBest == nullptr || cmd.keyword.GetLength() > pBest->keyword.GetLength())
 			{
-				return true; // キーワードは一致したが実行対象が無いので何もしない
+				pBest = &cmd;
 			}
-
-			HINSTANCE hResult = ::ShellExecute(nullptr, _T("open"), file,
-				params.IsEmpty() ? nullptr : static_cast<LPCTSTR>(params),
-				nullptr, SW_SHOWNORMAL);
-
-			if (reinterpret_cast<INT_PTR>(hResult) > 32)
-			{
-				SetDlgItemText(IDC_EDIT1, _T(""));
-				m_listResults.ResetContent();
-				m_filteredResults.clear();
-				ShowWindow(SW_HIDE);
-			}
-
-			return true; // キーワード一致時点で、通常の検索起動へはフォールバックしない
 		}
 	}
 
-	return false;
+	if (pBest == nullptr)
+	{
+		return false;
+	}
+
+	// キーワード直後の空白(例: "/clip xxxx" の区切り)は引数に含めない。
+	CString arg = input.Mid(pBest->keyword.GetLength());
+	arg.TrimLeft();
+
+	CString expanded = ExpandInstantMacros(pBest->commandLine, arg);
+
+	auto finishAndHide = [this]()
+	{
+		SetDlgItemText(IDC_EDIT1, _T(""));
+		m_listResults.ResetContent();
+		m_filteredResults.clear();
+		ShowWindow(SW_HIDE);
+	};
+
+	// "@clip 文字列" : 実行せず、文字列をクリップボードへコピーする。
+	CString trimmed = expanded;
+	trimmed.TrimLeft();
+	const int clipLen = 5; // "@clip"
+	if (trimmed.GetLength() >= clipLen &&
+		trimmed.Left(clipLen).CompareNoCase(_T("@clip")) == 0 &&
+		(trimmed.GetLength() == clipLen ||
+			trimmed[clipLen] == _T(' ') || trimmed[clipLen] == _T('\t')))
+	{
+		CString text = trimmed.Mid(clipLen);
+		text.TrimLeft();
+
+		if (SetClipboardText(m_hWnd, text))
+		{
+			finishAndHide();
+		}
+		return true;
+	}
+
+	CString file;
+	CString params;
+	SplitCommandLine(expanded, file, params);
+
+	if (file.IsEmpty())
+	{
+		return true; // キーワードは一致したが実行対象が無いので何もしない
+	}
+
+	HINSTANCE hResult = ::ShellExecute(nullptr, _T("open"), file,
+		params.IsEmpty() ? nullptr : static_cast<LPCTSTR>(params),
+		nullptr, SW_SHOWNORMAL);
+
+	if (reinterpret_cast<INT_PTR>(hResult) > 32)
+	{
+		finishAndHide();
+	}
+
+	return true; // キーワード一致時点で、通常の検索起動へはフォールバックしない
+}
+
+// static
+bool CgleipnirDlg::SetClipboardText(HWND hWndOwner, const CString& text)
+{
+	if (!::OpenClipboard(hWndOwner))
+	{
+		return false;
+	}
+
+	bool ok = false;
+	::EmptyClipboard();
+
+	const SIZE_T chars = static_cast<SIZE_T>(text.GetLength());
+	HGLOBAL hMem = ::GlobalAlloc(GMEM_MOVEABLE, (chars + 1) * sizeof(wchar_t));
+	if (hMem != nullptr)
+	{
+		wchar_t* pDst = static_cast<wchar_t*>(::GlobalLock(hMem));
+		if (pDst != nullptr)
+		{
+			if (chars > 0)
+			{
+				memcpy(pDst, static_cast<LPCWSTR>(text), chars * sizeof(wchar_t));
+			}
+			pDst[chars] = L'\0';
+			::GlobalUnlock(hMem);
+
+			// 成功時は所有権がクリップボードへ移るので解放しない。
+			if (::SetClipboardData(CF_UNICODETEXT, hMem) != nullptr)
+			{
+				ok = true;
+			}
+		}
+		if (!ok)
+		{
+			::GlobalFree(hMem);
+		}
+	}
+
+	::CloseClipboard();
+	return ok;
 }
 
 CString CgleipnirDlg::ExpandInstantMacros(const CString& commandLine, const CString& arg) const

@@ -131,6 +131,8 @@ protected:
 	// file(先頭トークン、クォート考慮) と params(残り) に分割する。
 	static void SplitCommandLine(const CString& cmdLine, CString& file, CString& params);
 	static CString GetClipboardText(HWND hWndOwner);
+	// 文字列をクリップボード(CF_UNICODETEXT)へ設定する。成功時true。
+	static bool SetClipboardText(HWND hWndOwner, const CString& text);
 
 	// data フォルダに無ければ既定のテンプレート内容で作成する
 	// (scan.ini / instant.ini を初めて編集しようとした際に使う)。

@@ -110,6 +110,30 @@ VS2022でMFCダイアログベーステンプレートを生成し、それを�
   - `instant.ini`が存在しない場合は何もしない(全ての通常検索が
     そのまま機能する)。
   - キーワードの一致判定は大文字小文字を区別する(本家Fenrirに合わせた)。
+  - **2026-08-26 追記**: ユーザーから提供された本家Fenrirの実際の
+    `instant.ini`サンプルと`ExpandInstantMacros()`の実装を突き合わせて
+    検証し、`%A`/`%W`/`%V`/`%C`/`%scanfile`/`%pathfile`/`%initfile`/
+    `%cmddir`の全マクロが意図通り解釈できることを確認した
+    (`%pathfile`は本家の既定`data\path`ではなく本実装の`data\index.txt`、
+    `%initfile`は本家の既定`data\fenrir.ini`ではなく本実装の
+    `data\config.ini`を指す点のみ、ファイル名が異なる)。ダブルクォーテーション
+    の二重表記や、実行ファイルパス+URL引数のような2トークン構成の
+    コマンドラインも`SplitCommandLine`で正しく分割できることを、
+    サンプルの`/g=`行(Chrome経由のGoogle検索)で確認済み。
+    あわせて、初回作成時の既定テンプレート(`kDefaultInstantIniTemplate`)を
+    本家サンプルにより忠実な内容(`/n`のような先頭スラッシュ形式の
+    キーワード、Chrome経由のGoogle検索例)に更新した。
+  - **`@clip`(クリップボードコピー)**: コマンドラインが`@clip`で始まる
+    場合(マクロ展開後に判定)、ShellExecuteせず、`@clip`以降の文字列を
+    クリップボード(CF_UNICODETEXT)へコピーし、入力欄を空にしてウィンドウを
+    隠す。例: `/clip=@clip %A` → 「/clip xxxx」で`xxxx`をコピー。
+    固定文字列(`/mail=@clip foo@example.com`)や`%C`との併用も可能。
+    `@clip`はgleipnir独自拡張(本家Fenrirには無い)。
+    あわせて、(1)複数キーワードが前方一致する場合は最長のものを採用する
+    (`/c`と`/clip`の衝突回避)、(2)キーワード直後の空白は引数から除去する
+    (`/clip xxxx`の`xxxx`のみが`%A`になる)、という挙動に変更した。
+    実装は`SetClipboardText()`(新規)と`TryExecuteInstantCommand()`。
+    既定テンプレートに`/clip=@clip %A`の例を追加。**動作未確認**(要ビルド確認)。
 - **設定関連のトレイメニュー(暫定)**: 「設定」サブメニューを追加し、
   以下を実行できるようにした。
   - `scan.ini を編集`: 無ければ既定テンプレートを作成した上でメモ帳で開く。
@@ -413,3 +437,11 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
   起動履歴機能を追加(最大50件、最近使った順)。検索時は履歴に一致する
   項目をインデックス全体からの通常検索より優先して表示するようにした
   (`gleipnirDlg.h`/`.cpp`のみ更新、`resource.h`は変更なし)。
+- 2026-08-26: ユーザー提供の本家Fenrir`instant.ini`サンプルと突き合わせ、
+  `ExpandInstantMacros`の全マクロ(`%A`/`%W`/`%V`/`%C`/`%scanfile`/
+  `%pathfile`/`%initfile`/`%cmddir`)とダブルクォーテーション二重表記の
+  解釈が正しいことを確認。既定の`instant.ini`テンプレートを本家サンプルに
+  忠実な内容に更新(`gleipnirDlg.cpp`のみ更新)。
+- 2026-10-23: instant.iniに`@clip`(クリップボードコピー)を追加。最長
+  キーワード一致・キーワード直後の空白除去も導入。既定テンプレートに
+  `/clip=@clip %A`を追加(`gleipnirDlg.h/.cpp`, `instant.ini.sample`更新)。
