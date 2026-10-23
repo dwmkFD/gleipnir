@@ -63,6 +63,23 @@ BOOL CSettingCommonDlg::OnInitDialog()
 		pHotKeyWnd->EnableWindow(FALSE);
 	}
 
+	// ビジュアル欄の書式を、空欄時の薄字ヒント(キューバナー)で示す。
+	// 空欄のままなら既定値(緑文字・黒背景・メイリオ太字)が使われる。
+	struct CueBanner { UINT id; LPCWSTR text; };
+	const CueBanner cues[] = {
+		{ IDC_EDIT7, L"#00FF00 または 0,255,0" },
+		{ IDC_EDIT8, L"#000000 または 0,0,0" },
+		{ IDC_EDIT9, L"Meiryo,10,bold" },
+	};
+	for (const CueBanner& cue : cues)
+	{
+		CEdit* pEdit = static_cast<CEdit*>(GetDlgItem(cue.id));
+		if (pEdit != nullptr)
+		{
+			pEdit->SetCueBanner(cue.text, TRUE);
+		}
+	}
+
 	return TRUE;
 }
 

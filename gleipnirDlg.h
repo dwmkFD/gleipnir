@@ -88,13 +88,20 @@ protected:
 	CListBox m_listResults;
 	CProgressCtrl m_progressBar;
 
-	// 外観(黒背景・緑文字・メイリオ太字)。将来 config.ini の
-	// 文字色/背景色/フォント設定と連動させる想定。
+	// 外観。config.ini [Common] の TextColor / BackgroundColor / Font から
+	// 読み込む(未指定・不正値の場合は既定の 緑文字 / 黒背景 / メイリオ太字)。
 	CFont m_font;
 	CBrush m_bgBrush;
 	COLORREF m_textColor = RGB(0, 255, 0);
 	COLORREF m_bgColor = RGB(0, 0, 0);
+	int m_editMinHeight = 0; // .rc で決めた検索欄の高さ(フォントに合わせて広げる際の下限)
 	void ApplyAppearance();
+
+	// 色文字列("#RRGGBB" / "RRGGBB" / "R,G,B")を解釈する。不正なら false。
+	static bool ParseColorString(const CString& text, COLORREF& color);
+	// フォント文字列("書体名[,サイズ(pt)][,bold|normal]")を解釈し、lf に反映する。
+	// 省略された要素は lf の値をそのまま残す。サイズ変換に hDC を使う。
+	static void ParseFontString(const CString& text, LOGFONT& lf, HDC hDC);
 
 	// ファイルインデックス
 	std::vector<FileEntry> m_fileIndex;       // 保存/読み込み済みの全件

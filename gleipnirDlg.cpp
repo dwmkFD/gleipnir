@@ -274,11 +274,21 @@ void CgleipnirDlg::CreateDynamicControls()
 
 void CgleipnirDlg::ApplyAppearance()
 {
-	m_textColor = RGB(0, 255, 0); // 緑
-	m_bgColor = RGB(0, 0, 0);     // 黒
+	// config.ini [Common] の TextColor / BackgroundColor / Font を読み込む。
+	// 空欄・不正値の項目は既定値(緑文字・黒背景・メイリオ太字)を使う。
+	const CString configPath = GetSettingsFilePath();
+	TCHAR buf[512] = { 0 };
 
-	// 現在のダイアログフォントのサイズを引き継ぎ、書体だけメイリオ太字にする。
-	// メイリオが無い環境ではGDIが近い書体に自動で置き換える。
+	m_textColor = RGB(0, 255, 0); // 既定: 緑
+	::GetPrivateProfileString(_T("Common"), _T("TextColor"), _T(""), buf, _countof(buf), configPath);
+	ParseColorString(buf, m_textColor);
+
+	m_bgColor = RGB(0, 0, 0);     // 既定: 黒
+	::GetPrivateProfileString(_T("Common"), _T("BackgroundColor"), _T(""), buf, _countof(buf), configPath);
+	ParseColorString(buf, m_bgColor);
+
+	// 既定: ダイアログフォントのサイズを引き継ぎ、メイリオ太字。
+	// 指定書体が無い環境ではGDIが近い書体に自動で置き換える。
 	LOGFONT lf = {};
 	CFont* pBase = GetFont();
 	if (pBase != nullptr)
@@ -294,18 +304,165 @@ void CgleipnirDlg::ApplyAppearance()
 	lf.lfQuality = CLEARTYPE_QUALITY;
 	_tcscpy_s(lf.lfFaceName, _T("Meiryo"));
 
+	::GetPrivateProfileString(_T("Common"), _T("Font"), _T(""), buf, _countof(buf), configPath);
+	{
+		CClientDC dc(this);
+		ParseFontString(buf, lf, dc.GetSafeHdc());
+	}
+
+	// コントロールに新しいフォントを渡してから古いフォントを破棄する
+	// (使用中の HFONT を先に消さないよう、一時オブジェクト経由で差し替える)。
+	CFont newFont;
+	newFont.CreateFontIndirect(&lf);
+
+	CWnd* pEdit = GetDlgItem(IDC_EDIT1);
+	pEdit->SetFont(&newFont);
+	m_listResults.SetFont(&newFont);
+
 	m_font.DeleteObject();
-	m_font.CreateFontIndirect(&lf);
+	m_font.Attach(newFont.Detach());
 
 	m_bgBrush.DeleteObject();
 	m_bgBrush.CreateSolidBrush(m_bgColor);
 
 	SetBackgroundColor(m_bgColor);
 
-	GetDlgItem(IDC_EDIT1)->SetFont(&m_font);
-	m_listResults.SetFont(&m_font);
+	// フォントの高さに合わせて検索欄の高さを調整し、その下のプログレスバーと
+	// 候補リストを詰め直す(.rc で決めた高さより小さくはしない)。
+	CRect editRect;
+	pEdit->GetWindowRect(&editRect);
+	ScreenToClient(&editRect);
+	if (m_editMinHeight == 0)
+	{
+		m_editMinHeight = editRect.Height();
+	}
+
+	TEXTMETRIC tm = {};
+	{
+		CClientDC dc(pEdit);
+		CFont* pOld = dc.SelectObject(&m_font);
+		dc.GetTextMetrics(&tm);
+		dc.SelectObject(pOld);
+	}
+	const int fontEditHeight = static_cast<int>(tm.tmHeight) + 8; // 枠線と内側の余白ぶん
+	const int editHeight = (fontEditHeight > m_editMinHeight) ? fontEditHeight : m_editMinHeight;
+	editRect.bottom = editRect.top + editHeight;
+	pEdit->MoveWindow(&editRect);
+
+	CRect clientRect;
+	GetClientRect(&clientRect);
+
+	CRect progressRect;
+	m_progressBar.GetWindowRect(&progressRect);
+	ScreenToClient(&progressRect);
+	const int progressHeight = progressRect.Height();
+	progressRect.top = editRect.bottom + 4;
+	progressRect.bottom = progressRect.top + progressHeight;
+	m_progressBar.MoveWindow(&progressRect);
+
+	CRect listRect(
+		editRect.left,
+		progressRect.bottom + 4,
+		clientRect.right - editRect.left,
+		clientRect.bottom - editRect.left);
+	m_listResults.MoveWindow(&listRect);
 
 	Invalidate();
+	pEdit->Invalidate();
+	m_listResults.Invalidate();
+}
+
+// static
+bool CgleipnirDlg::ParseColorString(const CString& text, COLORREF& color)
+{
+	CString s = text;
+	s.Trim();
+	if (s.IsEmpty())
+	{
+		return false;
+	}
+
+	// "R,G,B" 形式(各 0〜255)
+	if (s.Find(_T(',')) >= 0)
+	{
+		int values[3] = { 0 };
+		int count = 0;
+		int pos = 0;
+		CString token = s.Tokenize(_T(","), pos);
+		while (!token.IsEmpty())
+		{
+			token.Trim();
+			if (count >= 3 || token.IsEmpty() || token.SpanIncluding(_T("0123456789")) != token)
+			{
+				return false;
+			}
+			const int v = _ttoi(token);
+			if (v < 0 || v > 255)
+			{
+				return false;
+			}
+			values[count++] = v;
+			token = s.Tokenize(_T(","), pos);
+		}
+		if (count != 3)
+		{
+			return false;
+		}
+		color = RGB(values[0], values[1], values[2]);
+		return true;
+	}
+
+	// "#RRGGBB" / "RRGGBB" 形式(HTML・CSS と同じ並び)
+	if (s[0] == _T('#'))
+	{
+		s = s.Mid(1);
+	}
+	if (s.GetLength() != 6 || s.SpanIncluding(_T("0123456789abcdefABCDEF")) != s)
+	{
+		return false;
+	}
+	const unsigned long rgb = _tcstoul(s, nullptr, 16);
+	color = RGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+	return true;
+}
+
+// static
+void CgleipnirDlg::ParseFontString(const CString& text, LOGFONT& lf, HDC hDC)
+{
+	// "書体名[,サイズ(pt)][,bold|normal]"。カンマ区切りの各要素を種類で判定するので
+	// 順不同でもよい(数字だけ→サイズ、bold/normal 等→太さ、それ以外→書体名)。
+	int pos = 0;
+	CString token = text.Tokenize(_T(","), pos);
+	while (!token.IsEmpty())
+	{
+		token.Trim();
+		if (!token.IsEmpty())
+		{
+			if (token.SpanIncluding(_T("0123456789")) == token)
+			{
+				const int pt = _ttoi(token);
+				if (pt >= 6 && pt <= 72 && hDC != nullptr)
+				{
+					lf.lfHeight = -::MulDiv(pt, ::GetDeviceCaps(hDC, LOGPIXELSY), 72);
+					lf.lfWidth = 0;
+				}
+			}
+			else if (token.CompareNoCase(_T("bold")) == 0 || token == _T("太字"))
+			{
+				lf.lfWeight = FW_BOLD;
+			}
+			else if (token.CompareNoCase(_T("normal")) == 0 || token.CompareNoCase(_T("regular")) == 0
+				|| token == _T("標準"))
+			{
+				lf.lfWeight = FW_NORMAL;
+			}
+			else if (token.GetLength() < LF_FACESIZE)
+			{
+				_tcscpy_s(lf.lfFaceName, token);
+			}
+		}
+		token = text.Tokenize(_T(","), pos);
+	}
 }
 
 HBRUSH CgleipnirDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
@@ -568,6 +725,7 @@ void CgleipnirDlg::OnTrayEditInstantIni()
 void CgleipnirDlg::OnTrayReloadSettings()
 {
 	LoadInstantCommands();
+	ApplyAppearance(); // config.ini を手で編集した場合の外観反映
 	ShowTrayBalloon(_T("gleipnir"), _T("設定を再読み込みしました。"));
 }
 
@@ -612,7 +770,11 @@ void CgleipnirDlg::OnEnChangeEdit1()
 		m_filteredResults.clear();
 
 		CSettingDlg dlg(this);
-		dlg.DoModal();
+		if (dlg.DoModal() == IDOK)
+		{
+			// 保存された文字色・背景色・フォントを即座に反映する。
+			ApplyAppearance();
+		}
 		return;
 	}
 
