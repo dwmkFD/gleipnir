@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "afxdialogex.h"
+#include "CKeyCaptureEdit.h"
 
 
 // CSettingCommonDlg ダイアログ
@@ -21,6 +22,9 @@ public:
 	void LoadFromConfig(const CString& configPath);
 	// コントロールの現在値を data\config.ini へ書き込む。
 	void SaveToConfig(const CString& configPath);
+	// 保存前の入力チェック(フォルダ展開キーと親フォルダ展開キーの重複等)。
+	// 問題があればメッセージを出して false を返す。
+	bool ValidateBeforeSave();
 
 protected:
 	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV サポート
@@ -29,8 +33,10 @@ protected:
 	// [検索方式]・[候補リスト]・[インデックスデータ]・[ビジュアル] 各項目。
 	// 「呼び出しキー」欄(IDC_EDIT_HOTKEY)は現状Caps Lock固定のため、
 	// 変更不可(無効化)として表示のみ行い、保存対象には含めない。
-	CString m_folderExpandKey;          // フォルダ展開キー
-	CString m_parentFolderExpandKey;    // 親フォルダ展開キー
+	CString m_folderExpandKey;          // フォルダ展開キー(既定: Ctrl+F。表記は KeyBinding.h)
+	CString m_parentFolderExpandKey;    // 親フォルダ展開キー(既定: Ctrl+B)
+	CKeyCaptureEdit m_editFolderExpandKey;       // IDC_EDIT2(キーを押して設定する欄)
+	CKeyCaptureEdit m_editParentFolderExpandKey; // IDC_EDIT3
 	CString m_selectDownKey;            // 下選択キー
 	CString m_selectUpKey;              // 上選択キー
 	// 検索方式(コンボの番号。0=先頭部分一致, 1=中間部分一致, 2=スキップマッチング)。

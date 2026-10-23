@@ -118,10 +118,16 @@ BOOL CSettingCommonDlg::OnInitDialog()
 		pIconCombo->SetCurSel(0);
 	}
 
-	// ビジュアル欄の書式を、空欄時の薄字ヒント(キューバナー)で示す。
-	// 空欄のままなら既定値(緑文字・黒背景・メイリオ太字)が使われる。
+	// フォルダ展開キー・親フォルダ展開キー: 押したキーをそのまま割り当てとして記録する欄。
+	m_editFolderExpandKey.SubclassDlgItem(IDC_EDIT2, this);
+	m_editParentFolderExpandKey.SubclassDlgItem(IDC_EDIT3, this);
+
+	// 書式や既定値を、空欄時の薄字ヒント(キューバナー)で示す。
+	// 空欄のままなら既定値(Ctrl+F / Ctrl+B、緑文字・黒背景・メイリオ太字)が使われる。
 	struct CueBanner { UINT id; LPCWSTR text; };
 	const CueBanner cues[] = {
+		{ IDC_EDIT2, L"キーを押して設定(空欄=Ctrl+F)" },
+		{ IDC_EDIT3, L"キーを押して設定(空欄=Ctrl+B)" },
 		{ IDC_EDIT7, L"#00FF00 または 0,255,0" },
 		{ IDC_EDIT8, L"#000000 または 0,0,0" },
 		{ IDC_EDIT9, L"Meiryo,10,bold" },
@@ -142,11 +148,12 @@ void CSettingCommonDlg::LoadFromConfig(const CString& configPath)
 {
 	TCHAR buf[512] = { 0 };
 
+	// 未設定・解釈できない値なら既定のキーを表示する(実際に使われるキーと一致させる)。
 	::GetPrivateProfileString(_T("Common"), _T("FolderExpandKey"), _T(""), buf, _countof(buf), configPath);
-	m_folderExpandKey = buf;
+	m_folderExpandKey = KeyBindingText::Format(KeyBindingText::ParseOr(buf, DefaultFolderExpandKey()));
 
 	::GetPrivateProfileString(_T("Common"), _T("ParentFolderExpandKey"), _T(""), buf, _countof(buf), configPath);
-	m_parentFolderExpandKey = buf;
+	m_parentFolderExpandKey = KeyBindingText::Format(KeyBindingText::ParseOr(buf, DefaultParentFolderExpandKey()));
 
 	::GetPrivateProfileString(_T("Common"), _T("SelectDownKey"), _T(""), buf, _countof(buf), configPath);
 	m_selectDownKey = buf;
@@ -191,8 +198,11 @@ void CSettingCommonDlg::SaveToConfig(const CString& configPath)
 	// コントロールの現在値をメンバー変数へ取り込む。
 	UpdateData(TRUE);
 
-	::WritePrivateProfileString(_T("Common"), _T("FolderExpandKey"), m_folderExpandKey, configPath);
-	::WritePrivateProfileString(_T("Common"), _T("ParentFolderExpandKey"), m_parentFolderExpandKey, configPath);
+	// 表記を正規化して保存する(空欄なら空 = 既定のキー)。
+	::WritePrivateProfileString(_T("Common"), _T("FolderExpandKey"),
+		KeyBindingText::Format(KeyBindingText::Parse(m_folderExpandKey)), configPath);
+	::WritePrivateProfileString(_T("Common"), _T("ParentFolderExpandKey"),
+		KeyBindingText::Format(KeyBindingText::Parse(m_parentFolderExpandKey)), configPath);
 	::WritePrivateProfileString(_T("Common"), _T("SelectDownKey"), m_selectDownKey, configPath);
 	::WritePrivateProfileString(_T("Common"), _T("SelectUpKey"), m_selectUpKey, configPath);
 	::WritePrivateProfileString(_T("Common"), _T("SearchMethodNormal"),
@@ -214,4 +224,25 @@ void CSettingCommonDlg::SaveToConfig(const CString& configPath)
 
 	numBuf.Format(_T("%d"), m_clearInputOnHide ? 1 : 0);
 	::WritePrivateProfileString(_T("Common"), _T("ClearInputOnHide"), numBuf, configPath);
+}
+
+bool CSettingCommonDlg::ValidateBeforeSave()
+{
+	CString expandText;
+	CString parentText;
+	GetDlgItemText(IDC_EDIT2, expandText);
+	GetDlgItemText(IDC_EDIT3, parentText);
+
+	const KeyBinding expandKey = KeyBindingText::ParseOr(expandText, DefaultFolderExpandKey());
+	const KeyBinding parentKey = KeyBindingText::ParseOr(parentText, DefaultParentFolderExpandKey());
+	if (expandKey == parentKey)
+	{
+		CString msg;
+		msg.Format(_T("フォルダ展開キーと親フォルダ展開キーが同じ(%s)です。\n別のキーを設定してください。"),
+			static_cast<LPCTSTR>(KeyBindingText::Format(expandKey)));
+		MessageBox(msg, _T("gleipnir"), MB_OK | MB_ICONWARNING);
+		GetDlgItem(IDC_EDIT3)->SetFocus();
+		return false;
+	}
+	return true;
 }

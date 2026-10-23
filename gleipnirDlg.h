@@ -7,6 +7,7 @@
 #include <vector>
 #include <atomic>
 #include "CResultListBox.h"
+#include "KeyBinding.h"
 
 // タスクトレイアイコンのコールバックメッセージ
 #define WM_TRAYICON (WM_APP + 1)
@@ -140,7 +141,13 @@ protected:
 	// フォルダ展開時の方式は、フォルダ展開機能の実装時に使う(現状は読み込みのみ)。
 	SearchMethod m_searchMethodNormal = SearchMethod::Substring;
 	SearchMethod m_searchMethodFolderExpand = SearchMethod::Skip;
+	// フォルダ展開キー(config.ini [Common] FolderExpandKey / ParentFolderExpandKey。
+	// 既定: Ctrl+F / Ctrl+B)。LoadSearchSettings() で一緒に読み込む。
+	KeyBinding m_folderExpandKey = DefaultFolderExpandKey();
+	KeyBinding m_parentFolderExpandKey = DefaultParentFolderExpandKey();
 	void LoadSearchSettings();
+	// 押されたキーがフォルダ展開/親フォルダ展開の割り当てなら処理し、TRUE を返す。
+	bool HandleFolderExpandKey(const MSG* pMsg);
 
 	// フォルダ展開。選択中の候補がフォルダなら(キー押下の時点で実在を確認)、
 	// その中身を実際に列挙してリストに表示し、入力欄はその中の絞り込みに使う。

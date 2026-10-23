@@ -573,33 +573,14 @@ void CgleipnirDlg::OnSysCommand(UINT nID, LPARAM lParam)
 
 BOOL CgleipnirDlg::PreTranslateMessage(MSG* pMsg)
 {
-	// フォルダ展開(暫定キー。キー割り当ての設定は次回以降に実装):
-	//   Tab               : 選択中の候補がフォルダなら、その中身を展開する
-	//   BackSpace(入力が空): 展開中なら親フォルダへ(ルートなら展開を終了)
-	if (pMsg->message == WM_KEYDOWN
+	// フォルダ展開キー / 親フォルダ展開キー(設定画面で割り当て。既定 Ctrl+F / Ctrl+B)。
+	// Alt との同時押しは WM_SYSKEYDOWN で届く。
+	if ((pMsg->message == WM_KEYDOWN || pMsg->message == WM_SYSKEYDOWN)
 		&& (GetFocus() == GetDlgItem(IDC_EDIT1) || GetFocus() == &m_listResults))
 	{
-		const bool modifier = (::GetKeyState(VK_SHIFT) < 0) || (::GetKeyState(VK_CONTROL) < 0)
-			|| (::GetKeyState(VK_MENU) < 0);
-
-		if (pMsg->wParam == VK_TAB && !modifier)
+		if (HandleFolderExpandKey(pMsg))
 		{
-			if (ExpandSelectedFolder())
-			{
-				return TRUE;
-			}
-			// フォルダでなければ通常の Tab(フォーカス移動)
-		}
-		else if (pMsg->wParam == VK_BACK && !modifier && !m_expandedFolder.IsEmpty()
-			&& (pMsg->lParam & (1 << 30)) == 0) // 押しっぱなしの自動リピートでは遡らない
-		{
-			CString input;
-			GetDlgItemText(IDC_EDIT1, input);
-			if (input.IsEmpty())
-			{
-				ExpandParentFolder();
-				return TRUE;
-			}
+			return TRUE;
 		}
 	}
 
@@ -1504,6 +1485,50 @@ void CgleipnirDlg::UpdateSearchResults(const CString& query)
 	}
 }
 
+bool CgleipnirDlg::HandleFolderExpandKey(const MSG* pMsg)
+{
+	const UINT vk = static_cast<UINT>(pMsg->wParam);
+
+	// フォルダ展開キー: 選択中の候補がフォルダなら展開する。
+	if (m_folderExpandKey.Matches(vk))
+	{
+		if (ExpandSelectedFolder())
+		{
+			return true;
+		}
+		// フォルダでなかった場合、Ctrl/Alt 付きのキーは何もせず握りつぶす
+		// (入力欄に余計な動作をさせないため)。Tab 等の単独キーは本来の動作に任せる。
+		return m_folderExpandKey.ctrl || m_folderExpandKey.alt;
+	}
+
+	// 親フォルダ展開キー: フォルダ展開中なら親フォルダへ(ルートなら展開を終了)。
+	if (m_parentFolderExpandKey.Matches(vk))
+	{
+		if (m_expandedFolder.IsEmpty())
+		{
+			return m_parentFolderExpandKey.ctrl || m_parentFolderExpandKey.alt;
+		}
+
+		if (m_parentFolderExpandKey.IsTextEditingKey())
+		{
+			// BackSpace 等の編集キーを割り当てた場合は、入力欄が空のときだけ働かせ、
+			// 押しっぱなしの自動リピートでは遡らない(文字を消し切った勢いで
+			// 上の階層へ移動してしまうのを防ぐ)。
+			CString input;
+			GetDlgItemText(IDC_EDIT1, input);
+			if (!input.IsEmpty() || (pMsg->lParam & (1 << 30)) != 0)
+			{
+				return false;
+			}
+		}
+
+		ExpandParentFolder();
+		return true;
+	}
+
+	return false;
+}
+
 bool CgleipnirDlg::ExpandSelectedFolder()
 {
 	const int sel = m_listResults.GetCurSel();
@@ -1738,6 +1763,12 @@ void CgleipnirDlg::LoadSearchSettings()
 {
 	const CString configPath = GetSettingsFilePath();
 	TCHAR buf[128] = { 0 };
+
+	::GetPrivateProfileString(_T("Common"), _T("FolderExpandKey"), _T(""), buf, _countof(buf), configPath);
+	m_folderExpandKey = KeyBindingText::ParseOr(buf, DefaultFolderExpandKey());
+
+	::GetPrivateProfileString(_T("Common"), _T("ParentFolderExpandKey"), _T(""), buf, _countof(buf), configPath);
+	m_parentFolderExpandKey = KeyBindingText::ParseOr(buf, DefaultParentFolderExpandKey());
 
 	::GetPrivateProfileString(_T("Common"), _T("SearchMethodNormal"), _T(""), buf, _countof(buf), configPath);
 	m_searchMethodNormal = ParseSearchMethod(buf, SearchMethod::Substring);

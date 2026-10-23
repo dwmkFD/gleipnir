@@ -183,6 +183,8 @@
     </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="CKeyCaptureEdit.h" />
+    <ClInclude Include="KeyBinding.h" />
     <ClInclude Include="CResultListBox.h" />
     <ClInclude Include="CSettingCommonDlg.h" />
     <ClInclude Include="CSettingDlg.h" />
@@ -195,6 +197,7 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CKeyCaptureEdit.cpp" />
     <ClCompile Include="CResultListBox.cpp" />
     <ClCompile Include="CSettingCommonDlg.cpp" />
     <ClCompile Include="CSettingDlg.cpp" />

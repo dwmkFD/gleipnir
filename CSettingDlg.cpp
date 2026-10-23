@@ -53,6 +53,14 @@ BOOL CSettingDlg::OnInitDialog()
 void CSettingDlg::OnOK()
 {
 	// OKで閉じる際に、各ページのコントロール値を config.ini へ保存する。
+	// 入力に問題があれば「共通」タブを表示したまま閉じない。
+	if (!m_pageCommon.ValidateBeforeSave())
+	{
+		m_tabCtrl.SetCurSel(0);
+		UpdatePageVisibility();
+		return;
+	}
+
 	CString configPath = GetConfigFilePath();
 	m_pageCommon.SaveToConfig(configPath);
 	m_pageOther.SaveToConfig(configPath);
