@@ -6,6 +6,7 @@
 
 #include <vector>
 #include <atomic>
+#include "CResultListBox.h"
 
 // タスクトレイアイコンのコールバックメッセージ
 #define WM_TRAYICON (WM_APP + 1)
@@ -85,7 +86,7 @@ protected:
 	bool m_bTrayIconAdded;		// タスクトレイアイコンが追加済みかどうか
 
 	// 検索結果表示用リストボックス、スキャン中プログレスバー(いずれも動的生成)
-	CListBox m_listResults;
+	CResultListBox m_listResults; // アイコン付きオーナードロー
 	CProgressCtrl m_progressBar;
 
 	// 外観。config.ini [Common] の TextColor / BackgroundColor / Font から
@@ -102,6 +103,8 @@ protected:
 	// フォント文字列("書体名[,サイズ(pt)][,bold|normal]")を解釈し、lf に反映する。
 	// 省略された要素は lf の値をそのまま残す。サイズ変換に hDC を使う。
 	static void ParseFontString(const CString& text, LOGFONT& lf, HDC hDC);
+	// config.ini の CandidateIcon の値を解釈する("0"/"非表示" 以外は表示)。
+	static bool IsCandidateIconEnabled(const CString& value);
 
 	// ファイルインデックス
 	std::vector<FileEntry> m_fileIndex;       // 保存/読み込み済みの全件

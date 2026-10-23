@@ -260,8 +260,11 @@ void CgleipnirDlg::CreateDynamicControls()
 		clientRect.bottom - editRect.left);
 
 	m_listResults.Create(
-		WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_BORDER | WS_TABSTOP | LBS_NOTIFY | LBS_HASSTRINGS,
+		WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_BORDER | WS_TABSTOP | LBS_NOTIFY | LBS_HASSTRINGS
+		| LBS_OWNERDRAWFIXED | LBS_NOINTEGRALHEIGHT,
 		listRect, this, IDC_LIST_RESULTS);
+	// 行 i の描画時に m_filteredResults[i] のパスからアイコンを取得する。
+	m_listResults.SetEntries(&m_filteredResults);
 
 	CFont* pFont = GetFont();
 	if (pFont != nullptr)
@@ -327,6 +330,11 @@ void CgleipnirDlg::ApplyAppearance()
 
 	SetBackgroundColor(m_bgColor);
 
+	// 候補リストのアイコン表示(config.ini [Common] CandidateIcon。1=表示/0=非表示、既定: 表示)。
+	::GetPrivateProfileString(_T("Common"), _T("CandidateIcon"), _T("1"), buf, _countof(buf), configPath);
+	m_listResults.SetColors(m_textColor, m_bgColor);
+	m_listResults.SetShowIcons(IsCandidateIconEnabled(buf)); // 行の高さも新フォントで再計算される
+
 	// フォントの高さに合わせて検索欄の高さを調整し、その下のプログレスバーと
 	// 候補リストを詰め直す(.rc で決めた高さより小さくはしない)。
 	CRect editRect;
@@ -370,6 +378,15 @@ void CgleipnirDlg::ApplyAppearance()
 	Invalidate();
 	pEdit->Invalidate();
 	m_listResults.Invalidate();
+}
+
+// static
+bool CgleipnirDlg::IsCandidateIconEnabled(const CString& value)
+{
+	// "0" / "非表示" のときだけ非表示。空欄や未知の値は既定の「表示」とする。
+	CString v = value;
+	v.Trim();
+	return !(v == _T("0") || v == _T("非表示"));
 }
 
 // static

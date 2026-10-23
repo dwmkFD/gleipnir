@@ -71,6 +71,9 @@ BOOL CgleipnirApp::InitInstance()
 	// この文字列を変更してください。
 	SetRegistryKey(_T("アプリケーション ウィザードで生成されたローカル アプリケーション"));
 
+	// 検索結果リストのアイコン取得(SHGetFileInfo)などシェルAPIのため COM を初期化する。
+	const HRESULT hrCom = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+
 	CgleipnirDlg dlg;
 	m_pMainWnd = &dlg;
 	INT_PTR nResponse = dlg.DoModal();
@@ -88,6 +91,11 @@ BOOL CgleipnirApp::InitInstance()
 	{
 		TRACE(traceAppMsg, 0, "警告: ダイアログの作成に失敗しました。アプリケーションは予期せずに終了します。\n");
 		TRACE(traceAppMsg, 0, "警告: ダイアログで MFC コントロールを使用している場合、#define _AFX_NO_MFC_CONTROLS_IN_DIALOGS を指定できません。\n");
+	}
+
+	if (SUCCEEDED(hrCom))
+	{
+		::CoUninitialize();
 	}
 
 	// 上で作成されたシェル マネージャーを削除します。

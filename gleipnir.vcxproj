@@ -183,6 +183,7 @@
     </ResourceCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="CResultListBox.h" />
     <ClInclude Include="CSettingCommonDlg.h" />
     <ClInclude Include="CSettingDlg.h" />
     <ClInclude Include="CSettingOtherDlg.h" />
@@ -194,6 +195,7 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CResultListBox.cpp" />
     <ClCompile Include="CSettingCommonDlg.cpp" />
     <ClCompile Include="CSettingDlg.cpp" />
     <ClCompile Include="CSettingOtherDlg.cpp" />

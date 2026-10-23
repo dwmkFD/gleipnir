@@ -378,6 +378,35 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
 - 生成スクリプトで機械的に配置したため、日本語ラベルが想定幅(上部74・
   グループ内66)に収まるかは要目視確認。**動作未確認**。
 
+### 12. 候補リストのアイコン表示(設定「候補リスト → アイコン」)(2026-10-23)
+- 検索結果リストの各行の左端に、そのファイル/フォルダのアイコン(シェルの
+  小アイコン)を表示する。設定画面の「アイコン」(`IDC_COMBO3`)で
+  **表示/非表示**を選べる。**既定は表示**。
+- **config.ini**: `[Common] CandidateIcon=1`(表示)/`0`(非表示)。キー無し・空欄・
+  その他の値は表示扱い(`"非表示"`という文字列も非表示として解釈する)。
+  反映タイミングは外観設定と同じ(起動時・設定OK時・「設定を再読み込み」時。
+  `ApplyAppearance()`内で読む)。
+- **新クラス `CResultListBox`**(`CResultListBox.h/.cpp`、vcxproj/filters登録済み):
+  `CListBox`派生のオーナードロー(`LBS_OWNERDRAWFIXED | LBS_HASSTRINGS`)。
+  - アイコンは`SHGetFileInfo(SHGFI_SYSICONINDEX | SHGFI_SMALLICON)`で
+    システムイメージリストの番号を取り、`ImageList_Draw`で描画。実在しない
+    パス(削除・移動済み)は`SHGFI_USEFILEATTRIBUTES`で拡張子から推定する。
+  - 取得は描画時(画面に見えている行だけ)に行い、フルパス→番号をキャッシュ
+    (4000件超で破棄)。入力のたびに200件分を取りに行くことはない。
+  - 行の高さ = max(文字の高さ, 小アイコンの高さ) + 2px。フォント変更・アイコン
+    設定変更時に`UpdateItemHeight()`で再計算する(オーナードロー固定高さの
+    リストはWM_SETFONTで高さが変わらないため)。非表示時は文字の高さのみ。
+  - 文字色・背景色は外観設定の値、選択行はシステムの選択色で描く。
+  - `MFC`の`CListBox`は`WM_DRAWITEM`を自分の`DrawItem`へ反射するため、
+    ダイアログ側ではなく派生クラスで描画している。
+- `gleipnir.cpp`の`InitInstance`で`CoInitializeEx`(STA)/`CoUninitialize`を追加
+  (`SHGetFileInfo`の前提)。
+- `.rc`: `IDC_COMBO3`を`CBS_DROPDOWNLIST`(並べ替え無し)に変更し、選択肢は
+  `CSettingCommonDlg::OnInitDialog`で「表示」「非表示」を登録。メンバーは
+  `CString m_candidateIcon`→`int m_candidateIconSel`(`DDX_CBIndex`)に変更。
+- 制約: ネットワークドライブやスリープ中の外付けドライブ上のパスは、アイコン
+  取得に時間がかかり描画が一瞬止まる可能性がある。**動作未確認**。
+
 ## 既知の制約・今後の改善候補
 - スキャン中はタイトルバーで件数を確認できるが、進捗率(%)や
   残りドライブ数などの詳細情報は表示していない。
@@ -395,8 +424,8 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
 - `instant.ini`のキーワード一致は前方一致・大文字小文字区別ありのみ。
   正規表現等の高度なマッチングには未対応。
 - 設定ダイアログの値は`config.ini`に保存/読み込みされるが、実際の
-  ランチャー動作への反映(検索方式・候補アイコン・フォルダ展開キー等の
-  実装)はまだ無い(文字色/背景色/フォントは「10.」で反映済み)(詳細は「8. 設定ダイアログの値の
+  ランチャー動作への反映(検索方式・フォルダ展開キー等の実装)はまだ無い
+  (文字色/背景色/フォントは「10.」、候補アイコンは「12.」で反映済み)(詳細は「8. 設定ダイアログの値の
   保存/読み込み・config.ini対応」を参照)。
 - `CSettingDlg::GetConfigFilePath()`は`CgleipnirDlg::GetDataFolderPath()`と
   同じロジックをクラスをまたいで複製している(重複コード、将来的に
@@ -417,7 +446,11 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
 4. 外観設定の連動(「10.」)の確認: `/option`で文字色・背景色・フォントを
    入力してOK→即座に反映されるか、大きめのフォント(例: `Meiryo,16,bold`)で
    検索欄が広がり候補リストが詰め直されるか、空欄に戻すと既定の外観に戻るか。
-   残りの`config.ini`項目(検索方式・候補アイコン・フォルダ展開キー等)の
+   候補アイコン(「12.」): 既定でアイコンが出るか、設定で「非表示」→OKで
+   消えて行が詰まるか、削除済みファイルでも拡張子のアイコンが出るか。
+   CResultListBox.h/.cppがプロジェクトに入っているか(VS上でソリューション
+   エクスプローラーに表示されるか)。
+   残りの`config.ini`項目(検索方式・フォルダ展開キー等)の
    反映は優先順位を相談したい。
 5. ビルド・実行し、スキャン中にタイトルバーの件数表示が更新されるか、
    `/scan stop`または`/scan cancel`(あるいはトレイメニューの
@@ -430,7 +463,7 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
 
 ## 未着手 (TODO)
 - `config.ini`に保存された各設定値を実際のランチャー動作へ反映
-  (検索方式、候補アイコン、フォルダ展開キー等。文字色/背景色/フォントは対応済み)
+  (検索方式、フォルダ展開キー等。文字色/背景色/フォント・候補アイコンは対応済み)
 - 外観設定の入力補助(色選択ダイアログ・フォント選択ダイアログのボタン追加。
   要リソース追加)
 - `CSettingOtherDlg`への設定項目追加(現状コントロール無し)
@@ -529,3 +562,7 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
 - 2026-10-23: 設定ダイアログ(`IDD_SETTING_DIALOG`/`_COMMON`/`_OTHER`)の
   コントロール配置を整理(ラベル列・入力列・行間を統一、ページがタブに収まるよう
   親ダイアログを拡大、コンボのドロップダウン高さを修正)。`gleipnir.rc`のみ更新。
+- 2026-10-23: 候補リストのアイコン表示(既定: 表示、`CandidateIcon=1/0`)を実装。
+  新規`CResultListBox.h/.cpp`(オーナードロー)、`gleipnirDlg.h/.cpp`、
+  `CSettingCommonDlg.h/.cpp`、`gleipnir.rc`(`IDC_COMBO3`をドロップダウンリスト化)、
+  `gleipnir.cpp`(COM初期化)、`gleipnir.vcxproj/.filters`を更新。動作未確認。

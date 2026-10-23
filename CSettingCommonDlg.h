@@ -35,7 +35,7 @@ protected:
 	CString m_selectUpKey;              // 上選択キー
 	CString m_searchMethodNormal;       // 検索方式(通常時)
 	CString m_searchMethodFolderExpand; // 検索方式(フォルダ展開時)
-	CString m_candidateIcon;            // 候補リストのアイコン
+	int     m_candidateIconSel;         // 候補リストのアイコン(0=表示, 1=非表示。config.ini には 1/0 で保存)
 	int     m_maxEnumCount;             // 候補リストの最大列挙数
 	BOOL    m_autoDeleteBrokenPath;     // リンク切れパスの自動削除
 	CString m_textColor;                // 文字色

@@ -16,6 +16,7 @@ CSettingCommonDlg::CSettingCommonDlg(CWnd* pParent /*=nullptr*/)
 	: CDialogEx(IDD_SETTING_DIALOG_COMMON, pParent)
 	, m_maxEnumCount(50)
 	, m_autoDeleteBrokenPath(FALSE)
+	, m_candidateIconSel(0)
 	, m_clearInputOnHide(TRUE)
 {
 
@@ -34,7 +35,7 @@ void CSettingCommonDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Text(pDX, IDC_EDIT5, m_selectUpKey);
 	DDX_CBString(pDX, IDC_COMBO1, m_searchMethodNormal);
 	DDX_CBString(pDX, IDC_COMBO2, m_searchMethodFolderExpand);
-	DDX_CBString(pDX, IDC_COMBO3, m_candidateIcon);
+	DDX_CBIndex(pDX, IDC_COMBO3, m_candidateIconSel);
 	DDX_Text(pDX, IDC_EDIT6, m_maxEnumCount);
 	DDV_MinMaxInt(pDX, m_maxEnumCount, 0, 100000);
 	DDX_Check(pDX, IDC_CHECK1, m_autoDeleteBrokenPath);
@@ -61,6 +62,16 @@ BOOL CSettingCommonDlg::OnInitDialog()
 	if (pHotKeyWnd != nullptr)
 	{
 		pHotKeyWnd->EnableWindow(FALSE);
+	}
+
+	// 候補リストのアイコン: 表示/非表示の二択(並びは CBIndex と対応させる)。
+	CComboBox* pIconCombo = static_cast<CComboBox*>(GetDlgItem(IDC_COMBO3));
+	if (pIconCombo != nullptr)
+	{
+		pIconCombo->ResetContent();
+		pIconCombo->AddString(_T("表示"));   // 0
+		pIconCombo->AddString(_T("非表示")); // 1
+		pIconCombo->SetCurSel(0);
 	}
 
 	// ビジュアル欄の書式を、空欄時の薄字ヒント(キューバナー)で示す。
@@ -105,8 +116,13 @@ void CSettingCommonDlg::LoadFromConfig(const CString& configPath)
 	::GetPrivateProfileString(_T("Common"), _T("SearchMethodFolderExpand"), _T(""), buf, _countof(buf), configPath);
 	m_searchMethodFolderExpand = buf;
 
-	::GetPrivateProfileString(_T("Common"), _T("CandidateIcon"), _T(""), buf, _countof(buf), configPath);
-	m_candidateIcon = buf;
+	// "0"/"非表示" のときだけ非表示。未設定・その他の値は既定の「表示」。
+	::GetPrivateProfileString(_T("Common"), _T("CandidateIcon"), _T("1"), buf, _countof(buf), configPath);
+	{
+		CString v = buf;
+		v.Trim();
+		m_candidateIconSel = (v == _T("0") || v == _T("非表示")) ? 1 : 0;
+	}
 
 	m_maxEnumCount = ::GetPrivateProfileInt(_T("Common"), _T("MaxEnumCount"), 50, configPath);
 	m_autoDeleteBrokenPath = ::GetPrivateProfileInt(_T("Common"), _T("AutoDeleteBrokenPath"), 0, configPath) ? TRUE : FALSE;
@@ -137,7 +153,7 @@ void CSettingCommonDlg::SaveToConfig(const CString& configPath)
 	::WritePrivateProfileString(_T("Common"), _T("SelectUpKey"), m_selectUpKey, configPath);
 	::WritePrivateProfileString(_T("Common"), _T("SearchMethodNormal"), m_searchMethodNormal, configPath);
 	::WritePrivateProfileString(_T("Common"), _T("SearchMethodFolderExpand"), m_searchMethodFolderExpand, configPath);
-	::WritePrivateProfileString(_T("Common"), _T("CandidateIcon"), m_candidateIcon, configPath);
+	::WritePrivateProfileString(_T("Common"), _T("CandidateIcon"), (m_candidateIconSel == 1) ? _T("0") : _T("1"), configPath);
 
 	CString numBuf;
 	numBuf.Format(_T("%d"), m_maxEnumCount);
