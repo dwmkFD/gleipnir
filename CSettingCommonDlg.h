@@ -34,9 +34,9 @@ protected:
 	afx_msg void OnBnClickedTextColor();
 	afx_msg void OnBnClickedBackgroundColor();
 	afx_msg void OnBnClickedFont();
-	// 文字色・背景色の欄を、その色で表示する(見た目のプレビュー)
+	// ビジュアル欄の一番下のサンプル表示(文字色・背景色・フォントの見た目)
 	afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
-	afx_msg void OnEnChangeColorEdit();
+	afx_msg void OnEnChangeVisualEdit();
 
 	// [検索方式]・[候補リスト]・[インデックスデータ]・[ビジュアル] 各項目。
 	// 「呼び出しキー」欄(IDC_EDIT_HOTKEY)は現状Caps Lock固定のため、
@@ -76,9 +76,15 @@ protected:
 	// 欄の文字列を色として解釈する(空欄・不正値は defaultColor)。
 	COLORREF GetEditColor(UINT editId, COLORREF defaultColor);
 
-	// 文字色・背景色の欄のプレビュー用ブラシ
-	CBrush m_previewBrush;
-	COLORREF m_previewBrushColor = CLR_INVALID;
+	// フォント欄の文字列を、メイン画面と同じ規則で LOGFONT にする
+	// (メイン画面のフォントサイズ + メイリオ太字を下地に、文字列の指定を反映)。
+	void BuildFontFromText(const CString& fontText, LOGFONT& lf);
+	// サンプル表示(IDC_STATIC_SAMPLE)を現在の欄の値で更新する。
+	void UpdateSample();
+	CFont m_sampleFont;
+	CBrush m_sampleBrush;
+	COLORREF m_sampleTextColor = RGB(0, 255, 0);
+	COLORREF m_sampleBackColor = RGB(0, 0, 0);
 
 	DECLARE_MESSAGE_MAP()
 };

@@ -84,8 +84,9 @@ BEGIN_MESSAGE_MAP(CSettingCommonDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_BUTTON_BGCOLOR, &CSettingCommonDlg::OnBnClickedBackgroundColor)
 	ON_BN_CLICKED(IDC_BUTTON_FONT, &CSettingCommonDlg::OnBnClickedFont)
 	ON_WM_CTLCOLOR()
-	ON_EN_CHANGE(IDC_EDIT7, &CSettingCommonDlg::OnEnChangeColorEdit)
-	ON_EN_CHANGE(IDC_EDIT8, &CSettingCommonDlg::OnEnChangeColorEdit)
+	ON_EN_CHANGE(IDC_EDIT7, &CSettingCommonDlg::OnEnChangeVisualEdit)
+	ON_EN_CHANGE(IDC_EDIT8, &CSettingCommonDlg::OnEnChangeVisualEdit)
+	ON_EN_CHANGE(IDC_EDIT9, &CSettingCommonDlg::OnEnChangeVisualEdit)
 END_MESSAGE_MAP()
 
 
@@ -227,6 +228,9 @@ void CSettingCommonDlg::LoadFromConfig(const CString& configPath)
 
 	// 読み込んだ値をコントロールへ反映する。
 	UpdateData(FALSE);
+
+	// サンプル表示を読み込んだ値で更新する。
+	UpdateSample();
 }
 
 void CSettingCommonDlg::SaveToConfig(const CString& configPath)
@@ -412,29 +416,11 @@ void CSettingCommonDlg::OnBnClickedBackgroundColor()
 
 void CSettingCommonDlg::OnBnClickedFont()
 {
-	// 初期表示: メイン画面と同じ規則(メイン画面のフォントのサイズ + メイリオ太字)を
-	// 下地にして、欄の文字列を反映する。
-	LOGFONT lf = {};
-	CWnd* pMain = AfxGetMainWnd();
-	CFont* pBase = (pMain != nullptr) ? pMain->GetFont() : nullptr;
-	if (pBase != nullptr)
-	{
-		pBase->GetLogFont(&lf);
-	}
-	else
-	{
-		lf.lfHeight = -12;
-	}
-	lf.lfWeight = FW_BOLD;
-	lf.lfCharSet = DEFAULT_CHARSET;
-	_tcscpy_s(lf.lfFaceName, _T("Meiryo"));
-
+	// 初期表示: 欄の文字列をメイン画面と同じ規則で解釈したフォント。
 	CString fontText;
 	GetDlgItemText(IDC_EDIT9, fontText);
-	{
-		CClientDC dc(this);
-		CgleipnirDlg::ParseFontString(fontText, lf, dc.GetSafeHdc());
-	}
+	LOGFONT lf = {};
+	BuildFontFromText(fontText, lf);
 
 	// 「文字飾り」(取り消し線・下線・色)も表示する。色は文字色の欄と連動させる。
 	CFontDialog dlg(&lf, CF_SCREENFONTS | CF_EFFECTS | CF_INITTOLOGFONTSTRUCT | CF_NOVERTFONTS, nullptr, this);
@@ -459,40 +445,72 @@ void CSettingCommonDlg::OnBnClickedFont()
 	}
 }
 
+void CSettingCommonDlg::BuildFontFromText(const CString& fontText, LOGFONT& lf)
+{
+	lf = LOGFONT();
+	CWnd* pMain = AfxGetMainWnd();
+	CFont* pBase = (pMain != nullptr) ? pMain->GetFont() : nullptr;
+	if (pBase != nullptr)
+	{
+		pBase->GetLogFont(&lf);
+	}
+	else
+	{
+		lf.lfHeight = -12;
+	}
+	lf.lfWeight = FW_BOLD;
+	lf.lfCharSet = DEFAULT_CHARSET;
+	lf.lfQuality = CLEARTYPE_QUALITY;
+	_tcscpy_s(lf.lfFaceName, _T("Meiryo"));
+
+	CClientDC dc(this);
+	CgleipnirDlg::ParseFontString(fontText, lf, dc.GetSafeHdc());
+}
+
+void CSettingCommonDlg::UpdateSample()
+{
+	CWnd* pSample = GetDlgItem(IDC_STATIC_SAMPLE);
+	if (pSample == nullptr)
+	{
+		return;
+	}
+
+	// 空欄・不正値はメイン画面と同じく既定値(緑文字・黒背景・メイリオ太字)。
+	m_sampleTextColor = GetEditColor(IDC_EDIT7, kDefaultTextColor);
+	m_sampleBackColor = GetEditColor(IDC_EDIT8, kDefaultBackgroundColor);
+	m_sampleBrush.DeleteObject();
+	m_sampleBrush.CreateSolidBrush(m_sampleBackColor);
+
+	CString fontText;
+	GetDlgItemText(IDC_EDIT9, fontText);
+	LOGFONT lf = {};
+	BuildFontFromText(fontText, lf);
+
+	// コントロールに新しいフォントを渡してから古いフォントを破棄する。
+	CFont newFont;
+	newFont.CreateFontIndirect(&lf);
+	pSample->SetFont(&newFont, FALSE);
+	m_sampleFont.DeleteObject();
+	m_sampleFont.Attach(newFont.Detach());
+
+	pSample->Invalidate();
+}
+
 HBRUSH CSettingCommonDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
 {
-	const int id = (pWnd != nullptr) ? pWnd->GetDlgCtrlID() : 0;
-	if ((nCtlColor == CTLCOLOR_EDIT) && (id == IDC_EDIT7 || id == IDC_EDIT8))
+	if (pWnd != nullptr && pWnd->GetDlgCtrlID() == IDC_STATIC_SAMPLE
+		&& m_sampleBrush.GetSafeHandle() != nullptr)
 	{
-		// 文字色・背景色の両欄とも「その文字色・背景色で実際に表示した見た目」にする
-		// (文字色の欄はその色の文字、背景色の欄はその色の背景)。空欄・不正値は既定色。
-		const COLORREF text = GetEditColor(IDC_EDIT7, kDefaultTextColor);
-		const COLORREF back = GetEditColor(IDC_EDIT8, kDefaultBackgroundColor);
-
-		if (m_previewBrush.GetSafeHandle() == nullptr || m_previewBrushColor != back)
-		{
-			m_previewBrush.DeleteObject();
-			m_previewBrush.CreateSolidBrush(back);
-			m_previewBrushColor = back;
-		}
-		pDC->SetTextColor(text);
-		pDC->SetBkColor(back);
-		return static_cast<HBRUSH>(m_previewBrush.GetSafeHandle());
+		pDC->SetTextColor(m_sampleTextColor);
+		pDC->SetBkColor(m_sampleBackColor);
+		return static_cast<HBRUSH>(m_sampleBrush.GetSafeHandle());
 	}
 	return CDialogEx::OnCtlColor(pDC, pWnd, nCtlColor);
 }
 
-void CSettingCommonDlg::OnEnChangeColorEdit()
+void CSettingCommonDlg::OnEnChangeVisualEdit()
 {
-	// どちらかの色が変わったら、両方の欄を描き直す。
-	CWnd* pText = GetDlgItem(IDC_EDIT7);
-	CWnd* pBack = GetDlgItem(IDC_EDIT8);
-	if (pText != nullptr)
-	{
-		pText->Invalidate();
-	}
-	if (pBack != nullptr)
-	{
-		pBack->Invalidate();
-	}
+	// 文字色・背景色・フォントのいずれかが変わったらサンプルを更新する
+	// (手入力・「選択...」ボタンのどちらでも)。
+	UpdateSample();
 }
