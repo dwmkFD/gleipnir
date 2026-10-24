@@ -33,6 +33,7 @@ protected:
 	// [検索方式]・[候補リスト]・[インデックスデータ]・[ビジュアル] 各項目。
 	// 「呼び出しキー」欄(IDC_EDIT_HOTKEY)は現状Caps Lock固定のため、
 	// 変更不可(無効化)として表示のみ行い、保存対象には含めない。
+	CString m_hotKey;                   // 呼び出しキー(表示のみ。config.ini の HotKey、既定 CapsLock)
 	CString m_folderExpandKey;          // フォルダ展開キー(既定: Ctrl+F。表記は KeyBinding.h)
 	CString m_parentFolderExpandKey;    // 親フォルダ展開キー(既定: Ctrl+B)
 	CKeyCaptureEdit m_editFolderExpandKey;       // IDC_EDIT2(キーを押して設定する欄)

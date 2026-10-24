@@ -288,11 +288,14 @@ protected:
 		const std::vector<CString>& ignoreFolderNames);
 	static UINT IndexThreadProc(LPVOID pParam);
 
-	// Caps Lock を横取りするための低レベルキーボードフック。
-	// (JIS配列では単独押下時に vkCode が VK_DBE_ALPHANUMERIC に化けるため、
+	// 呼び出しキー(既定 Caps Lock)を横取りするための低レベルキーボードフック。
+	// (Caps Lock は、JIS配列では単独押下時に vkCode が VK_DBE_ALPHANUMERIC に化けるため、
 	//  scanCode で判定している。詳細は .cpp 内のコメント参照)
 	static HHOOK s_hKeyboardHook;
 	static HWND s_hMainWnd;
+	// 呼び出しキー(config.ini [Common] HotKey。設定画面では変更不可、ファイルの直接編集のみ)。
+	static KeyBinding s_hotKey;
+	static bool s_hotKeyDown; // 押下中(キーリピートで表示/非表示を繰り返さないため)
 	static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
 
 	// 生成された、メッセージ割り当て関数

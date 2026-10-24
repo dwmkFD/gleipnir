@@ -85,9 +85,8 @@ BOOL CSettingCommonDlg::OnInitDialog()
 {
 	CDialogEx::OnInitDialog();
 
-	// 呼び出しキーは現状 Caps Lock 固定のため、設定項目としては用意しつつも
-	// 変更不可(無効化)として表示のみ行う(保存対象にも含めない)。
-	SetDlgItemText(IDC_EDIT_HOTKEY, _T("Caps Lock"));
+	// 呼び出しキーは画面からは変更不可(無効化)とし、config.ini の値を表示するだけにする
+	// (保存対象にも含めない。値は LoadFromConfig で入れる。変更は config.ini の直接編集のみ)。
 	CWnd* pHotKeyWnd = GetDlgItem(IDC_EDIT_HOTKEY);
 	if (pHotKeyWnd != nullptr)
 	{
@@ -158,6 +157,14 @@ BOOL CSettingCommonDlg::OnInitDialog()
 void CSettingCommonDlg::LoadFromConfig(const CString& configPath)
 {
 	TCHAR buf[512] = { 0 };
+
+	// 呼び出しキー(表示のみ)。メイン画面と同じ解釈で、実際に使われているキーを表示する。
+	::GetPrivateProfileString(_T("Common"), _T("HotKey"), _T(""), buf, _countof(buf), configPath);
+	{
+		const KeyBinding hotKey = KeyBindingText::Parse(buf);
+		m_hotKey = KeyBindingText::Format(IsUsableHotKey(hotKey) ? hotKey : DefaultHotKey());
+		SetDlgItemText(IDC_EDIT_HOTKEY, m_hotKey);
+	}
 
 	// 未設定・解釈できない値なら既定のキーを表示する(実際に使われるキーと一致させる)。
 	::GetPrivateProfileString(_T("Common"), _T("FolderExpandKey"), _T(""), buf, _countof(buf), configPath);
@@ -272,6 +279,22 @@ bool CSettingCommonDlg::ValidateBeforeSave()
 		CString text;
 		GetDlgItemText(f.id, text);
 		f.key = KeyBindingText::ParseOr(text, f.defaultKey());
+	}
+
+	// 呼び出しキー(config.ini の値。画面では変更不可)と重なっていると、そのキーは
+	// 全アプリで横取りされてランチャー内に届かないため、これも確認する。
+	const KeyBinding hotKey = KeyBindingText::Parse(m_hotKey);
+	for (const KeyField& f : fields)
+	{
+		if (f.key == hotKey)
+		{
+			CString msg;
+			msg.Format(_T("「%s」のキー(%s)が呼び出しキーと同じです。\n別のキーを設定してください。"),
+				f.label, static_cast<LPCTSTR>(KeyBindingText::Format(f.key)));
+			MessageBox(msg, _T("gleipnir"), MB_OK | MB_ICONWARNING);
+			GetDlgItem(f.id)->SetFocus();
+			return false;
+		}
 	}
 
 	for (size_t i = 0; i < _countof(fields); ++i)

@@ -30,6 +30,10 @@ namespace
 	// 変換されてしまうため、vkCode ではなく scanCode で判定している。
 	constexpr WORD SCANCODE_CAPSLOCK = 0x3A;
 
+	// Alt 同時押しの呼び出しキーを横取りしたとき、メニューバーの選択を防ぐために送る
+	// ダミーの仮想キー(0xE8 は未割り当て)。
+	constexpr WORD kMenuMaskKey = 0xE8;
+
 	// 通常検索の表示件数は設定(m_maxEnumCount、既定200)。
 	// フォルダ展開時はフォルダの中身を一覧する用途のため、設定とは別の固定上限。
 	constexpr int kMaxFolderExpandResults = 2000;
@@ -159,6 +163,8 @@ struct IndexCompleteResult
 
 HHOOK CgleipnirDlg::s_hKeyboardHook = nullptr;
 HWND CgleipnirDlg::s_hMainWnd = nullptr;
+KeyBinding CgleipnirDlg::s_hotKey = DefaultHotKey();
+bool CgleipnirDlg::s_hotKeyDown = false;
 
 CgleipnirDlg::CgleipnirDlg(CWnd* pParent /*=nullptr*/)
 	: CDialogEx(IDD_GLEIPNIR_DIALOG, pParent)
@@ -1369,10 +1375,13 @@ namespace
 		CString comment; // 新規作成時に項目の前に書く説明
 	};
 
-	// config.ini [Common] の全項目と既定値。読み込み側の既定値と一致させること。
+	// config.ini [Common] の全項目(14項目)と既定値。読み込み側の既定値と一致させること。
 	std::vector<DefaultSetting> GetDefaultCommonSettings()
 	{
 		return {
+			{ _T("HotKey"), KeyBindingText::Format(DefaultHotKey()),
+				_T("; 呼び出しキー(表示/非表示の切り替え)。設定画面では変更できません。\r\n")
+				_T("; ここを直接書き換えると変更できます(例: Ctrl+Alt+Space, F12)。全アプリのキー入力を横取りします。") },
 			{ _T("FolderExpandKey"), KeyBindingText::Format(DefaultFolderExpandKey()),
 				_T("; フォルダ展開キー(書式: Ctrl+Shift+Alt+キー名。例: Ctrl+F, Tab, F1)") },
 			{ _T("ParentFolderExpandKey"), KeyBindingText::Format(DefaultParentFolderExpandKey()),
@@ -1980,6 +1989,19 @@ void CgleipnirDlg::LoadSearchSettings()
 	// 最大列挙数(範囲外・未設定は既定の200件)。
 	const int maxEnum = static_cast<int>(::GetPrivateProfileInt(_T("Common"), _T("MaxEnumCount"), kDefaultMaxEnumCount, configPath));
 	m_maxEnumCount = (maxEnum >= kMinMaxEnumCount && maxEnum <= kMaxMaxEnumCount) ? maxEnum : kDefaultMaxEnumCount;
+
+	// 呼び出しキー(既定: Caps Lock)。設定画面では変更できないが、config.ini を直接
+	// 編集した場合は反映する。解釈できない値・使えないキーは Caps Lock に戻す。
+	::GetPrivateProfileString(_T("Common"), _T("HotKey"), _T(""), buf, _countof(buf), configPath);
+	{
+		const KeyBinding hotKey = KeyBindingText::Parse(buf);
+		const KeyBinding newHotKey = IsUsableHotKey(hotKey) ? hotKey : DefaultHotKey();
+		if (!(newHotKey == s_hotKey))
+		{
+			s_hotKey = newHotKey;
+			s_hotKeyDown = false;
+		}
+	}
 
 	// リンク切れパスの自動削除(既定: 無効)。
 	m_autoDeleteBrokenPath = ::GetPrivateProfileInt(_T("Common"), _T("AutoDeleteBrokenPath"), 0, configPath) != 0;
@@ -2821,16 +2843,63 @@ LRESULT CALLBACK CgleipnirDlg::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
 	{
 		const KBDLLHOOKSTRUCT* pkbhs = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
 
-		if (pkbhs->scanCode == SCANCODE_CAPSLOCK)
+		// 自分(下の SendInput)が送ったダミーキーは対象外。
+		if ((pkbhs->flags & LLKHF_INJECTED) != 0 && pkbhs->vkCode == kMenuMaskKey)
 		{
-			if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)
-			{
-				::PostMessage(s_hMainWnd, WM_CAPSLOCK_TOGGLE, 0, 0);
-			}
+			return CallNextHookEx(s_hKeyboardHook, nCode, wParam, lParam);
+		}
 
-			// キーダウン・キーアップともにOSへ伝えず、Caps Lockのロック状態自体の
-			// トグルおよびIME切り替え動作を抑止する。
-			return 1;
+		// Caps Lock は vkCode が配列により化けるので scanCode で、それ以外は vkCode で判定する。
+		const bool isHotKeyKey = (s_hotKey.vk == VK_CAPITAL)
+			? (pkbhs->scanCode == SCANCODE_CAPSLOCK)
+			: (pkbhs->vkCode == s_hotKey.vk);
+
+		if (isHotKeyKey)
+		{
+			const bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
+			if (isDown)
+			{
+				if (s_hotKeyDown)
+				{
+					return 1; // 押しっぱなしのキーリピート: 何もせず握りつぶす
+				}
+
+				// 修飾キーの状態を確認(フック内では GetKeyState ではなく GetAsyncKeyState を使う)。
+				const bool ctrl = (::GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+				const bool shift = (::GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+				const bool alt = (::GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+				// 修飾キー無しの Caps Lock(既定)は、従来どおり修飾キーの状態に関わらず反応させる
+				// (Shift+Caps Lock 等で Caps Lock がオンになってしまうのも防ぐ)。
+				const bool plainCapsLock = (s_hotKey.vk == VK_CAPITAL)
+					&& !s_hotKey.ctrl && !s_hotKey.shift && !s_hotKey.alt;
+				if (plainCapsLock
+					|| (ctrl == s_hotKey.ctrl && shift == s_hotKey.shift && alt == s_hotKey.alt))
+				{
+					s_hotKeyDown = true;
+					::PostMessage(s_hMainWnd, WM_CAPSLOCK_TOGGLE, 0, 0);
+
+					// Alt 同時押しを横取りすると、後で Alt だけが離された形になり、
+					// 前面アプリのメニューバーが選択されてしまう。ダミーキーを挟んで防ぐ。
+					if (alt)
+					{
+						INPUT inputs[2] = {};
+						inputs[0].type = INPUT_KEYBOARD;
+						inputs[0].ki.wVk = kMenuMaskKey;
+						inputs[1] = inputs[0];
+						inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+						::SendInput(2, inputs, sizeof(INPUT));
+					}
+
+					// キーダウン・キーアップともにOSへ伝えない(Caps Lock なら、ロック状態の
+					// トグルおよびIME切り替え動作を抑止する)。
+					return 1;
+				}
+			}
+			else if (s_hotKeyDown)
+			{
+				s_hotKeyDown = false;
+				return 1; // 対応するキーアップも伝えない
+			}
 		}
 	}
 

@@ -269,6 +269,8 @@ VS2022でMFCダイアログベーステンプレートを生成し、それを�
 GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際に
 読み込み、各タブページ内のコントロールが何を表すラベルかを確認した上で実装した。
 
+- (2026-10-24 追記: 呼び出しキーは「20.」でconfig.iniの`HotKey`から読むようになり、
+  欄にはその値を表示する)
 - **`IDC_EDIT1`→`IDC_EDIT_HOTKEY`にリネーム**: `IDD_SETTING_DIALOG_COMMON`内の
   「呼び出しキー」欄が、メイン検索ウィンドウの検索欄と同じ`IDC_EDIT1`(値1000)を
   使っていたため、新規ID`IDC_EDIT_HOTKEY`(値1013)に変更(`resource.h`更新、
@@ -593,6 +595,36 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
 - 今後`[Common]`に項目を追加するときは、`GetDefaultCommonSettings()`にも追加する。
 - **動作未確認**。
 
+### 20. 呼び出しキーを config.ini に保持・直接編集で変更可能に(2026-10-24)
+- **方針(ユーザー指定)**: 呼び出しキーは基本的にCaps Lockのまま。設定画面では
+  変更できない(表示のみ)が、`config.ini`を意図的に直接編集した場合はその値を使う。
+- **config.ini**: `[Common] HotKey`(既定`CapsLock`)。書式は「15.」と同じ
+  (`Ctrl+Alt+Space`、`F12`、`Tab`等)。キー名`CapsLock`(別名`Caps Lock`/`Caps`)を
+  `KeyBinding.h`に追加。`GetDefaultCommonSettings()`に先頭項目として追加したので、
+  既存のconfig.iniにも次回起動時に書き足される(全14項目)。
+- **反映**: `LoadSearchSettings()`で読み込む(起動時・「設定を再読み込み」時)。
+  解釈できない値、または修飾キー(Ctrl/Alt)無しの文字キー(A〜Z、0〜9、記号、Space)は、
+  全アプリで文字が打てなくなるため使わずCaps Lockに戻す(`IsUsableHotKey()`)。
+- **設定画面**: 「呼び出しキー」欄(`IDC_EDIT_HOTKEY`、無効化のまま)に
+  config.iniの値(実際に使われているキー)を表示。保存はしない(`SaveToConfig`で
+  書き込まないので、手で書いた値が画面のOKで消えることはない)。OK時の重複チェックに
+  呼び出しキーも加えた(他の4キーと同じなら警告。呼び出しキーは全アプリで横取り
+  されてランチャー内に届かないため)。
+- **フック(`LowLevelKeyboardProc`)**:
+  - Caps Lockは従来どおり`scanCode`(0x3A)で判定(JIS配列対策)、それ以外は`vkCode`で
+    判定し、修飾キーは`GetAsyncKeyState`で確認。
+  - 修飾キー無しのCaps Lock(既定)は従来どおり修飾キーの状態に関わらず反応させる
+    (Shift+Caps Lock等でCaps Lockがオンになるのも引き続き防ぐ)。
+  - 一致したキーのキーダウン・キーアップはOSへ伝えない(従来どおり)。
+  - **押しっぱなしのキーリピートで表示/非表示を繰り返さない**よう押下状態を記録
+    (`s_hotKeyDown`)。従来のCaps Lockはリピートのたびにトグルしていたので、
+    ここは挙動の改善。
+  - Alt同時押しを横取りすると前面アプリのメニューバーが選択される問題を避けるため、
+    ダミーキー(0xE8)を`SendInput`で送る(自分で送ったものはフックで無視する)。
+  - 呼び出しキーに設定したキーは全アプリで横取りされる(例: `Tab`にすると
+    どのアプリでもTabが使えなくなる)。
+- **動作未確認**。
+
 ## 既知の制約・今後の改善候補
 - スキャン中はタイトルバーで件数を確認できるが、進捗率(%)や
   残りドライブ数などの詳細情報は表示していない。
@@ -646,6 +678,10 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
    キー割り当て(「15.」): 設定画面の欄でキーを押すと`Ctrl+F`等が入るか、
    Tab/BackSpace/F1等の単独キーも割り当てられるか、Deleteで空欄(既定)に戻るか、
    同じキーを2つに割り当てるとOK時に警告が出るか、Alt同時押しの割り当てが動くか。
+   呼び出しキー(「20.」): 設定画面に`CapsLock`と表示されるか、config.iniの
+   `HotKey`を`F12`や`Ctrl+Alt+Space`に書き換えて「設定を再読み込み」→そのキーで
+   切り替わり、Caps Lockが通常のCaps Lockに戻るか、キーを押しっぱなしにしても
+   点滅しないか、Alt同時押しで前面アプリのメニューが反応しないか。
    config.ini(「19.」): `data\config.ini`を消して起動→説明付きで全項目が作られるか、
    いくつかの行を消して起動→その項目だけ末尾に足されるか、メモ帳で開いて
    文字化けしないか(UTF-16)、旧版のconfig.iniが残っていても設定値が保たれるか。
@@ -804,3 +840,7 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
 - 2026-10-24: 起動時・「設定を再読み込み」時にconfig.iniが無ければ全項目を既定値で
   作成(説明コメント付き、UTF-16LE)、足りない項目だけ既定値で補完するようにした。
   旧版のANSIのconfig.iniはUTF-16LEに変換(`gleipnirDlg.h/.cpp`)。動作未確認。
+- 2026-10-24: 呼び出しキーを`config.ini`の`HotKey`(既定`CapsLock`)から読むように
+  した。設定画面は表示のみ(変更・保存不可)、ファイルの直接編集で変更可能。
+  キーリピートでのトグル連発を防止、Alt同時押し時のメニュー反応を抑止
+  (`KeyBinding.h`、`gleipnirDlg.h/.cpp`、`CSettingCommonDlg.h/.cpp`)。動作未確認。

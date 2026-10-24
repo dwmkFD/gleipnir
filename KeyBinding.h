@@ -69,6 +69,7 @@ namespace KeyBindingText
 	{
 		static const NamedKey keys[] = {
 			{ VK_TAB, _T("Tab") },
+			{ VK_CAPITAL, _T("CapsLock") }, { VK_CAPITAL, _T("Caps Lock") }, { VK_CAPITAL, _T("Caps") },
 			{ VK_BACK, _T("BackSpace") }, { VK_BACK, _T("BS") },
 			{ VK_RETURN, _T("Enter") },
 			{ VK_ESCAPE, _T("Esc") }, { VK_ESCAPE, _T("Escape") },
@@ -246,3 +247,11 @@ inline KeyBinding DefaultFolderExpandKey() { return KeyBindingText::Make('F', tr
 inline KeyBinding DefaultParentFolderExpandKey() { return KeyBindingText::Make('B', true); } // Ctrl+B
 inline KeyBinding DefaultSelectDownKey() { return KeyBindingText::Make('N', true); }         // Ctrl+N
 inline KeyBinding DefaultSelectUpKey() { return KeyBindingText::Make('P', true); }           // Ctrl+P
+inline KeyBinding DefaultHotKey() { return KeyBindingText::Make(VK_CAPITAL, false); }        // CapsLock
+
+// 呼び出しキー(config.ini [Common] HotKey)として使えるか。全アプリのキー入力を横取りするため、
+// 修飾キー無しの文字キー(A〜Z, 0〜9, 記号, Space)は、どこでも文字が打てなくなるので不可。
+inline bool IsUsableHotKey(const KeyBinding& kb)
+{
+	return kb.IsValid() && (kb.ctrl || kb.alt || !KeyBinding::IsTypingKey(kb.vk));
+}
