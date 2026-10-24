@@ -240,6 +240,11 @@ protected:
 	// data フォルダに無ければ既定のテンプレート内容で作成する
 	// (scan.ini / instant.ini を初めて編集しようとした際に使う)。
 	static void EnsureConfigFileExists(const CString& path, const CString& defaultContent);
+	// config.ini が無ければ全項目を既定値で作成し(UTF-16LE)、あれば足りない項目だけを
+	// 既定値で書き足す。旧版で作られた ANSI(Shift-JIS)の config.ini は UTF-16LE に変換する。
+	static void EnsureSettingsFile();
+	// BOM の無い(ANSI)設定ファイルを UTF-16LE(BOM付き)に変換する。
+	static void ConvertProfileToUtf16(const CString& path);
 	void OpenInNotepad(const CString& path);
 
 	// exe自身があるフォルダのパスを返す(dataフォルダの親)。

@@ -220,6 +220,9 @@ BOOL CgleipnirDlg::OnInitDialog()
 	}
 
 	// 検索結果リストボックス・スキャン中プログレスバーを動的生成する
+	// config.ini が無ければ既定値で作成し、足りない項目を補う(外観の適用より前に行う)。
+	EnsureSettingsFile();
+
 	CreateDynamicControls();
 
 	// 前回保存されたインデックスがあれば読み込む(無ければ何もしない。
@@ -762,6 +765,7 @@ void CgleipnirDlg::OnTrayEditInstantIni()
 void CgleipnirDlg::OnTrayReloadSettings()
 {
 	LoadInstantCommands();
+	EnsureSettingsFile(); // 手で項目を消した場合も既定値で補う
 	ApplyAppearance(); // config.ini を手で編集した場合の外観反映
 	LoadSearchSettings();
 	ShowTrayBalloon(_T("gleipnir"), _T("設定を再読み込みしました。"));
@@ -1354,6 +1358,151 @@ void CgleipnirDlg::EnsureConfigFileExists(const CString& path, const CString& de
 	const WORD bom = 0xFEFF;
 	file.Write(&bom, sizeof(bom));
 	file.Write(defaultContent.GetString(), defaultContent.GetLength() * sizeof(TCHAR));
+}
+
+namespace
+{
+	struct DefaultSetting
+	{
+		CString key;
+		CString value;
+		CString comment; // 新規作成時に項目の前に書く説明
+	};
+
+	// config.ini [Common] の全項目と既定値。読み込み側の既定値と一致させること。
+	std::vector<DefaultSetting> GetDefaultCommonSettings()
+	{
+		return {
+			{ _T("FolderExpandKey"), KeyBindingText::Format(DefaultFolderExpandKey()),
+				_T("; フォルダ展開キー(書式: Ctrl+Shift+Alt+キー名。例: Ctrl+F, Tab, F1)") },
+			{ _T("ParentFolderExpandKey"), KeyBindingText::Format(DefaultParentFolderExpandKey()),
+				_T("; 親フォルダ展開キー") },
+			{ _T("SelectDownKey"), KeyBindingText::Format(DefaultSelectDownKey()),
+				_T("; 候補の下選択キー") },
+			{ _T("SelectUpKey"), KeyBindingText::Format(DefaultSelectUpKey()),
+				_T("; 候補の上選択キー") },
+			{ _T("SearchMethodNormal"), CgleipnirDlg::SearchMethodToConfigValue(SearchMethod::Substring),
+				_T("; 検索方式(通常時)。prefix=先頭部分一致 / substring=中間部分一致 / skip=スキップマッチング") },
+			{ _T("SearchMethodFolderExpand"), CgleipnirDlg::SearchMethodToConfigValue(SearchMethod::Skip),
+				_T("; 検索方式(フォルダ展開時)") },
+			{ _T("CandidateIcon"), _T("1"),
+				_T("; 候補リストのアイコン。1=表示 / 0=非表示") },
+			{ _T("MaxEnumCount"), [] { CString v; v.Format(_T("%d"), kDefaultMaxEnumCount); return v; }(),
+				_T("; 候補リストの最大列挙数(1〜10000)") },
+			{ _T("AutoDeleteBrokenPath"), _T("0"),
+				_T("; 使用中にリンク切れパスを自動削除する。1=削除する / 0=削除しない") },
+			{ _T("TextColor"), _T("#00FF00"),
+				_T("; 文字色(#RRGGBB / R,G,B)") },
+			{ _T("BackgroundColor"), _T("#000000"),
+				_T("; 背景色(#RRGGBB / R,G,B)") },
+			{ _T("Font"), _T("Meiryo,bold"),
+				_T("; フォント(書体名[,サイズpt][,bold|normal]。サイズ省略時は画面の既定サイズ)") },
+			{ _T("ClearInputOnHide"), _T("1"),
+				_T("; 非表示にしたとき入力中の文字列・候補をクリアする。1=クリア / 0=残す") },
+		};
+	}
+}
+
+// static
+void CgleipnirDlg::EnsureSettingsFile()
+{
+	const CString path = GetSettingsFilePath(); // data フォルダは GetDataFolderPath() が作成する
+	const std::vector<DefaultSetting> defaults = GetDefaultCommonSettings();
+
+	if (::GetFileAttributes(path) == INVALID_FILE_ATTRIBUTES)
+	{
+		// 新規作成: 全項目を説明付きで書き出す(UTF-16LE、BOM付き)。
+		CString content =
+			_T("; gleipnir 動作設定ファイル\r\n")
+			_T("; 設定画面(/option)の OK で上書き保存されます。手で編集した場合は、\r\n")
+			_T("; トレイメニューの「設定を再読み込み」または再起動で反映されます。\r\n")
+			_T("; 項目を消した場合は、次回起動時に既定値で書き足されます。\r\n")
+			_T("\r\n")
+			_T("[Common]\r\n");
+		for (const auto& d : defaults)
+		{
+			content += d.comment + _T("\r\n") + d.key + _T("=") + d.value + _T("\r\n");
+		}
+		EnsureConfigFileExists(path, content);
+		return;
+	}
+
+	// 既存ファイル: 旧版(WritePrivateProfileString で新規作成)の ANSI ファイルなら
+	// UTF-16LE に変換してから、足りない項目だけ書き足す。
+	ConvertProfileToUtf16(path);
+
+	// キーが無い場合だけ既定値が返るよう、通常あり得ない文字列を既定値に使って判定する
+	// (「キーはあるが値が空」= 既定値を使う指定 なので書き換えない)。
+	const TCHAR kMissing[] = _T("\x01gleipnir-missing\x01");
+	TCHAR buf[64] = { 0 };
+	for (const auto& d : defaults)
+	{
+		::GetPrivateProfileString(_T("Common"), d.key, kMissing, buf, _countof(buf), path);
+		if (_tcscmp(buf, kMissing) == 0)
+		{
+			::WritePrivateProfileString(_T("Common"), d.key, d.value, path);
+		}
+	}
+}
+
+// static
+void CgleipnirDlg::ConvertProfileToUtf16(const CString& path)
+{
+	CFile file;
+	if (!file.Open(path, CFile::modeRead | CFile::shareDenyWrite))
+	{
+		return;
+	}
+	const ULONGLONG size = file.GetLength();
+	if (size > 1024 * 1024)
+	{
+		return; // 設定ファイルとしてあり得ない大きさなら触らない
+	}
+	std::vector<char> bytes(static_cast<size_t>(size));
+	if (size > 0)
+	{
+		file.Read(bytes.data(), static_cast<UINT>(size));
+	}
+	file.Close();
+
+	if (bytes.size() >= 2 && static_cast<unsigned char>(bytes[0]) == 0xFF
+		&& static_cast<unsigned char>(bytes[1]) == 0xFE)
+	{
+		return; // 既に UTF-16LE
+	}
+
+	// Windows のプロファイルAPIは BOM の無いファイルを ANSI(日本語環境では Shift-JIS)
+	// として読むため、同じ解釈で変換すれば内容は変わらない。
+	// (UTF-8 の BOM 付きで手保存されていた場合は UTF-8 として読む)
+	UINT codePage = CP_ACP;
+	size_t offset = 0;
+	if (bytes.size() >= 3 && static_cast<unsigned char>(bytes[0]) == 0xEF
+		&& static_cast<unsigned char>(bytes[1]) == 0xBB && static_cast<unsigned char>(bytes[2]) == 0xBF)
+	{
+		codePage = CP_UTF8;
+		offset = 3;
+	}
+
+	CStringW text;
+	const int srcLen = static_cast<int>(bytes.size() - offset);
+	if (srcLen > 0)
+	{
+		const int wideLen = ::MultiByteToWideChar(codePage, 0, bytes.data() + offset, srcLen, nullptr, 0);
+		if (wideLen <= 0)
+		{
+			return;
+		}
+		::MultiByteToWideChar(codePage, 0, bytes.data() + offset, srcLen, text.GetBuffer(wideLen), wideLen);
+		text.ReleaseBuffer(wideLen);
+	}
+
+	if (!file.Open(path, CFile::modeCreate | CFile::modeWrite | CFile::shareExclusive))
+	{
+		return;
+	}
+	const WORD bom = 0xFEFF;
+	file.Write(&bom, sizeof(bom));
+	file.Write(text.GetString(), text.GetLength() * sizeof(wchar_t));
 }
 
 void CgleipnirDlg::OpenInNotepad(const CString& path)

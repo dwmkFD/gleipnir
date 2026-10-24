@@ -569,6 +569,30 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
   `LaunchSelectedResult()`と`ExpandSelectedFolder()`に存在確認を追加
   (`gleipnirDlg.h/.cpp`)。**動作未確認**。
 
+### 19. config.ini の自動作成・不足項目の補完(2026-10-24)
+- 起動時(`OnInitDialog`、外観の適用より前)と「設定を再読み込み」時に
+  `EnsureSettingsFile()`を実行する。
+  - **ファイルが無い場合**: `[Common]`の全13項目を既定値で、項目ごとの説明コメント付きで
+    新規作成する(UTF-16LE・BOM付き、既存の`EnsureConfigFileExists()`を使用)。
+  - **ファイルはあるが項目が足りない場合**: 足りない項目だけを既定値で書き足す
+    (`[Common]`の末尾に追加。既存の項目・コメントはそのまま)。
+    「キーはあるが値が空」は既定値を使う指定なので書き換えない(キーが無いことは
+    通常あり得ない文字列を既定値にした`GetPrivateProfileString`で判定)。
+- **文字コード**: `WritePrivateProfileString`がファイルを新規作成するとANSI
+  (Shift-JIS)になり、Shift-JISで表せない文字(フォント名等)を保存できない。
+  そのためファイルは常にUTF-16LEで作成する。旧版で作られたBOM無し(ANSI)の
+  config.iniは、起動時にUTF-16LEへ変換する(`ConvertProfileToUtf16()`。プロファイル
+  APIと同じくANSIとして読むので内容は変わらない。UTF-8 BOM付きならUTF-8として読む)。
+  UTF-16LEのファイルにはプロファイルAPIがUTF-16のまま書き込む。
+- **既定値の一覧**(`GetDefaultCommonSettings()`。読み込み側の既定値と一致させること):
+  `FolderExpandKey=Ctrl+F` / `ParentFolderExpandKey=Ctrl+B` / `SelectDownKey=Ctrl+N` /
+  `SelectUpKey=Ctrl+P` / `SearchMethodNormal=substring` / `SearchMethodFolderExpand=skip` /
+  `CandidateIcon=1` / `MaxEnumCount=200` / `AutoDeleteBrokenPath=0` /
+  `TextColor=#00FF00` / `BackgroundColor=#000000` / `Font=Meiryo,bold`
+  (サイズ省略=画面の既定サイズ。従来の既定の見た目と同じ) / `ClearInputOnHide=1`。
+- 今後`[Common]`に項目を追加するときは、`GetDefaultCommonSettings()`にも追加する。
+- **動作未確認**。
+
 ## 既知の制約・今後の改善候補
 - スキャン中はタイトルバーで件数を確認できるが、進捗率(%)や
   残りドライブ数などの詳細情報は表示していない。
@@ -622,6 +646,9 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
    キー割り当て(「15.」): 設定画面の欄でキーを押すと`Ctrl+F`等が入るか、
    Tab/BackSpace/F1等の単独キーも割り当てられるか、Deleteで空欄(既定)に戻るか、
    同じキーを2つに割り当てるとOK時に警告が出るか、Alt同時押しの割り当てが動くか。
+   config.ini(「19.」): `data\config.ini`を消して起動→説明付きで全項目が作られるか、
+   いくつかの行を消して起動→その項目だけ末尾に足されるか、メモ帳で開いて
+   文字化けしないか(UTF-16)、旧版のconfig.iniが残っていても設定値が保たれるか。
    リンク切れ(「18.」): インデックスにあるファイルを削除してから選んでEnter→
    メッセージが出るか、設定を有効にすると候補から消えて次回起動後も出ないか、
    フォルダを消した場合に配下もまとめて消えるか、外付けドライブを外した状態では
@@ -774,3 +801,6 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
   起動/フォルダ展開時に存在を確認し、無ければメッセージ表示。有効時はインデックス・
   履歴から(配下含め)削除して保存。ドライブ/共有自体が見えない場合は削除しない
   (`gleipnirDlg.h/.cpp`)。動作未確認。
+- 2026-10-24: 起動時・「設定を再読み込み」時にconfig.iniが無ければ全項目を既定値で
+  作成(説明コメント付き、UTF-16LE)、足りない項目だけ既定値で補完するようにした。
+  旧版のANSIのconfig.iniはUTF-16LEに変換(`gleipnirDlg.h/.cpp`)。動作未確認。
