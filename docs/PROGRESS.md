@@ -626,6 +626,36 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
     どのアプリでもTabが使えなくなる)。
 - **動作未確認**。
 
+### 21. 文字色・背景色・フォントのGUI選択、色のプレビュー表示、フォントの飾り(2026-10-24)
+- 設定画面のビジュアル欄の各テキストボックス(`IDC_EDIT7/8/9`)の右に「選択...」ボタン
+  (`IDC_BUTTON_TEXTCOLOR` / `IDC_BUTTON_BGCOLOR` / `IDC_BUTTON_FONT`、
+  `resource.h`に1014〜1016を追加)を配置。テキストボックスは幅150→104に縮小
+  (右端234は維持)。テキストでの直接入力も従来どおり可能で、ボタンで選んだ結果は
+  テキストボックスに書き込まれる(保存の仕組みは共通)。
+- **色**: Windows標準の色の設定ダイアログ(`CColorDialog`)。欄の現在の色を初期選択
+  (空欄は既定色)。OKで`#RRGGBB`を欄に書き込む。
+  - 「作成した色」(16色)は`config.ini [Common] CustomColors`(`#RRGGBB`のカンマ区切り)に
+    保存。色ダイアログを閉じるたびに(キャンセルでも)保存し、設定画面のOK/キャンセルとは
+    無関係。初期値は白。`SaveToConfig`では書き込まない。
+- **フォント**: Windows標準のフォントダイアログ(`CFontDialog`、案A)。欄の文字列を
+  メイン画面と同じ規則(メイン画面のフォントサイズ + メイリオ太字を下地)で解釈して
+  初期表示。OKで`書体名,サイズ,bold|normal[,italic][,underline][,strikeout]`を欄に
+  書き込む(サイズは常に明示)。日本語環境では書体名が「メイリオ」等の日本語で返るが、
+  config.iniはUTF-16なのでそのまま保存できる。
+  - 「文字飾り」の色は**文字色の欄と連動**(初期値=文字色、ダイアログで色を変えた
+    場合だけ文字色の欄に反映)。
+- **斜体・下線・取り消し線**に対応(容易だったため実装)。`ParseFontString()`に
+  `italic`/`斜体`、`underline`/`下線`、`strikeout`/`取り消し線`を追加し、メイン画面の
+  検索欄・候補リストにも反映される。書式組み立ては`FormatFontString()`(新規)。
+- **色のプレビュー**: 文字色・背景色の両欄を、実際の見た目(文字色の文字 × 背景色の
+  背景)で表示する(`CSettingCommonDlg::OnCtlColor`)。どちらかの欄を変えると両方を
+  描き直す(`EN_CHANGE`)。空欄・不正値は既定色(緑/黒)で表示。
+- `CgleipnirDlg::ParseColorString` / `ParseFontString`を設定画面から使うためpublicに
+  移動し、`FormatColorString` / `FormatFontString`を追加。
+- `GetDefaultCommonSettings()`に`CustomColors`(空)を追加(全15項目)。Fontの説明
+  コメントに飾りの書式を追記。
+- **動作未確認**。
+
 ## 既知の制約・今後の改善候補
 - スキャン中はタイトルバーで件数を確認できるが、進捗率(%)や
   残りドライブ数などの詳細情報は表示していない。
@@ -679,6 +709,10 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
    キー割り当て(「15.」): 設定画面の欄でキーを押すと`Ctrl+F`等が入るか、
    Tab/BackSpace/F1等の単独キーも割り当てられるか、Deleteで空欄(既定)に戻るか、
    同じキーを2つに割り当てるとOK時に警告が出るか、Alt同時押しの割り当てが動くか。
+   色・フォント選択(「21.」): 「選択...」で色の設定/フォントのダイアログが開き、
+   選んだ値が欄に入るか、作成した色が次回も残るか、文字色・背景色の欄がその色で
+   表示されるか、斜体・下線がメイン画面に反映されるか、ボタン追加後に欄の
+   レイアウトが崩れていないか。
    呼び出しキー(「20.」): 設定画面に`CapsLock`と表示されるか、config.iniの
    Shift+Caps LockでCaps Lockがオン/オフでき、ランチャーは反応しないか(US/JIS双方)。
    `HotKey`を`F12`や`Ctrl+Alt+Space`に書き換えて「設定を再読み込み」→そのキーで
@@ -848,3 +882,7 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
   (`KeyBinding.h`、`gleipnirDlg.h/.cpp`、`CSettingCommonDlg.h/.cpp`)。動作未確認。
 - 2026-10-24: Shift+Caps Lockは横取りせずOSに渡すように変更(本家fenrirに合わせ、
   Caps Lockのオン/オフに使える。`gleipnirDlg.cpp`)。動作未確認。
+- 2026-10-24: 文字色・背景色・フォントの「選択...」ボタン(標準の色/フォントダイアログ)を
+  追加。作成した色をconfig.iniに保存、フォントの斜体・下線・取り消し線に対応、
+  文字色・背景色の欄を実際の色で表示(`resource.h`、`gleipnir.rc`、`gleipnirDlg.h/.cpp`、
+  `CSettingCommonDlg.h/.cpp`)。動作未確認。

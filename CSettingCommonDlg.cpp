@@ -49,6 +49,10 @@ CSettingCommonDlg::CSettingCommonDlg(CWnd* pParent /*=nullptr*/)
 	, m_searchMethodFolderExpandSel(2)
 	, m_clearInputOnHide(TRUE)
 {
+	for (COLORREF& c : m_customColors)
+	{
+		c = RGB(255, 255, 255);
+	}
 
 }
 
@@ -76,6 +80,12 @@ void CSettingCommonDlg::DoDataExchange(CDataExchange* pDX)
 
 
 BEGIN_MESSAGE_MAP(CSettingCommonDlg, CDialogEx)
+	ON_BN_CLICKED(IDC_BUTTON_TEXTCOLOR, &CSettingCommonDlg::OnBnClickedTextColor)
+	ON_BN_CLICKED(IDC_BUTTON_BGCOLOR, &CSettingCommonDlg::OnBnClickedBackgroundColor)
+	ON_BN_CLICKED(IDC_BUTTON_FONT, &CSettingCommonDlg::OnBnClickedFont)
+	ON_WM_CTLCOLOR()
+	ON_EN_CHANGE(IDC_EDIT7, &CSettingCommonDlg::OnEnChangeColorEdit)
+	ON_EN_CHANGE(IDC_EDIT8, &CSettingCommonDlg::OnEnChangeColorEdit)
 END_MESSAGE_MAP()
 
 
@@ -157,6 +167,9 @@ BOOL CSettingCommonDlg::OnInitDialog()
 void CSettingCommonDlg::LoadFromConfig(const CString& configPath)
 {
 	TCHAR buf[512] = { 0 };
+
+	m_configPath = configPath;
+	LoadCustomColors();
 
 	// 呼び出しキー(表示のみ)。メイン画面と同じ解釈で、実際に使われているキーを表示する。
 	::GetPrivateProfileString(_T("Common"), _T("HotKey"), _T(""), buf, _countof(buf), configPath);
@@ -314,4 +327,172 @@ bool CSettingCommonDlg::ValidateBeforeSave()
 		}
 	}
 	return true;
+}
+
+namespace
+{
+	// ビジュアル欄が空欄のときに使われる既定の色(メイン画面の既定と同じ)
+	const COLORREF kDefaultTextColor = RGB(0, 255, 0);
+	const COLORREF kDefaultBackgroundColor = RGB(0, 0, 0);
+}
+
+COLORREF CSettingCommonDlg::GetEditColor(UINT editId, COLORREF defaultColor)
+{
+	CString text;
+	GetDlgItemText(editId, text);
+	COLORREF color = defaultColor;
+	CgleipnirDlg::ParseColorString(text, color); // 不正なら defaultColor のまま
+	return color;
+}
+
+void CSettingCommonDlg::LoadCustomColors()
+{
+	TCHAR buf[512] = { 0 };
+	::GetPrivateProfileString(_T("Common"), _T("CustomColors"), _T(""), buf, _countof(buf), m_configPath);
+
+	const CString value = buf;
+	int pos = 0;
+	int index = 0;
+	CString token = value.Tokenize(_T(", "), pos);
+	while (!token.IsEmpty() && index < static_cast<int>(_countof(m_customColors)))
+	{
+		COLORREF c = RGB(255, 255, 255);
+		CgleipnirDlg::ParseColorString(token, c);
+		m_customColors[index++] = c;
+		token = value.Tokenize(_T(", "), pos);
+	}
+}
+
+void CSettingCommonDlg::SaveCustomColors() const
+{
+	if (m_configPath.IsEmpty())
+	{
+		return;
+	}
+	CString value;
+	for (int i = 0; i < static_cast<int>(_countof(m_customColors)); ++i)
+	{
+		if (i > 0)
+		{
+			value += _T(",");
+		}
+		value += CgleipnirDlg::FormatColorString(m_customColors[i]);
+	}
+	::WritePrivateProfileString(_T("Common"), _T("CustomColors"), value, m_configPath);
+}
+
+bool CSettingCommonDlg::ChooseColorFor(UINT editId, COLORREF defaultColor)
+{
+	CColorDialog dlg(GetEditColor(editId, defaultColor), 0, this);
+	dlg.m_cc.Flags |= CC_RGBINIT | CC_ANYCOLOR; // 黒(0)でも初期選択されるよう明示する
+	dlg.m_cc.lpCustColors = m_customColors;
+
+	const INT_PTR result = dlg.DoModal();
+
+	// 「作成した色」はキャンセルで閉じても変わっていることがあるので、毎回保存する。
+	SaveCustomColors();
+
+	if (result != IDOK)
+	{
+		return false;
+	}
+	SetDlgItemText(editId, CgleipnirDlg::FormatColorString(dlg.GetColor()));
+	return true;
+}
+
+void CSettingCommonDlg::OnBnClickedTextColor()
+{
+	ChooseColorFor(IDC_EDIT7, kDefaultTextColor);
+}
+
+void CSettingCommonDlg::OnBnClickedBackgroundColor()
+{
+	ChooseColorFor(IDC_EDIT8, kDefaultBackgroundColor);
+}
+
+void CSettingCommonDlg::OnBnClickedFont()
+{
+	// 初期表示: メイン画面と同じ規則(メイン画面のフォントのサイズ + メイリオ太字)を
+	// 下地にして、欄の文字列を反映する。
+	LOGFONT lf = {};
+	CWnd* pMain = AfxGetMainWnd();
+	CFont* pBase = (pMain != nullptr) ? pMain->GetFont() : nullptr;
+	if (pBase != nullptr)
+	{
+		pBase->GetLogFont(&lf);
+	}
+	else
+	{
+		lf.lfHeight = -12;
+	}
+	lf.lfWeight = FW_BOLD;
+	lf.lfCharSet = DEFAULT_CHARSET;
+	_tcscpy_s(lf.lfFaceName, _T("Meiryo"));
+
+	CString fontText;
+	GetDlgItemText(IDC_EDIT9, fontText);
+	{
+		CClientDC dc(this);
+		CgleipnirDlg::ParseFontString(fontText, lf, dc.GetSafeHdc());
+	}
+
+	// 「文字飾り」(取り消し線・下線・色)も表示する。色は文字色の欄と連動させる。
+	CFontDialog dlg(&lf, CF_SCREENFONTS | CF_EFFECTS | CF_INITTOLOGFONTSTRUCT | CF_NOVERTFONTS, nullptr, this);
+	const COLORREF textColor = GetEditColor(IDC_EDIT7, kDefaultTextColor);
+	dlg.m_cf.rgbColors = textColor;
+
+	if (dlg.DoModal() != IDOK)
+	{
+		return;
+	}
+
+	const int pointSize = (dlg.GetSize() + 5) / 10; // GetSize は 1/10 ポイント単位
+	const CString newFont = CgleipnirDlg::FormatFontString(dlg.GetFaceName(), pointSize,
+		dlg.GetWeight() >= FW_SEMIBOLD, dlg.IsItalic() != FALSE, dlg.IsUnderline() != FALSE,
+		dlg.IsStrikeOut() != FALSE);
+	SetDlgItemText(IDC_EDIT9, newFont);
+
+	// フォントダイアログで色を変えた場合だけ、文字色の欄にも反映する。
+	if (dlg.GetColor() != textColor)
+	{
+		SetDlgItemText(IDC_EDIT7, CgleipnirDlg::FormatColorString(dlg.GetColor()));
+	}
+}
+
+HBRUSH CSettingCommonDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
+{
+	const int id = (pWnd != nullptr) ? pWnd->GetDlgCtrlID() : 0;
+	if ((nCtlColor == CTLCOLOR_EDIT) && (id == IDC_EDIT7 || id == IDC_EDIT8))
+	{
+		// 文字色・背景色の両欄とも「その文字色・背景色で実際に表示した見た目」にする
+		// (文字色の欄はその色の文字、背景色の欄はその色の背景)。空欄・不正値は既定色。
+		const COLORREF text = GetEditColor(IDC_EDIT7, kDefaultTextColor);
+		const COLORREF back = GetEditColor(IDC_EDIT8, kDefaultBackgroundColor);
+
+		if (m_previewBrush.GetSafeHandle() == nullptr || m_previewBrushColor != back)
+		{
+			m_previewBrush.DeleteObject();
+			m_previewBrush.CreateSolidBrush(back);
+			m_previewBrushColor = back;
+		}
+		pDC->SetTextColor(text);
+		pDC->SetBkColor(back);
+		return static_cast<HBRUSH>(m_previewBrush.GetSafeHandle());
+	}
+	return CDialogEx::OnCtlColor(pDC, pWnd, nCtlColor);
+}
+
+void CSettingCommonDlg::OnEnChangeColorEdit()
+{
+	// どちらかの色が変わったら、両方の欄を描き直す。
+	CWnd* pText = GetDlgItem(IDC_EDIT7);
+	CWnd* pBack = GetDlgItem(IDC_EDIT8);
+	if (pText != nullptr)
+	{
+		pText->Invalidate();
+	}
+	if (pBack != nullptr)
+	{
+		pBack->Invalidate();
+	}
 }

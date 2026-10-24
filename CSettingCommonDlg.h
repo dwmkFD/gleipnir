@@ -30,6 +30,14 @@ protected:
 	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV サポート
 	virtual BOOL OnInitDialog();
 
+	// ビジュアル欄の「選択...」ボタン(色の設定ダイアログ / フォントの設定ダイアログ)
+	afx_msg void OnBnClickedTextColor();
+	afx_msg void OnBnClickedBackgroundColor();
+	afx_msg void OnBnClickedFont();
+	// 文字色・背景色の欄を、その色で表示する(見た目のプレビュー)
+	afx_msg HBRUSH OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor);
+	afx_msg void OnEnChangeColorEdit();
+
 	// [検索方式]・[候補リスト]・[インデックスデータ]・[ビジュアル] 各項目。
 	// 「呼び出しキー」欄(IDC_EDIT_HOTKEY)は現状Caps Lock固定のため、
 	// 変更不可(無効化)として表示のみ行い、保存対象には含めない。
@@ -57,6 +65,20 @@ protected:
 	// リソース追加後、DoDataExchangeに DDX_Check(pDX, <チェックボックスID>,
 	// m_clearInputOnHide); を追加すれば画面と連動する。
 	BOOL    m_clearInputOnHide;
+
+	// 色の設定ダイアログの「作成した色」(16色)。config.ini [Common] CustomColors に
+	// 色の設定ダイアログを閉じるたびに保存する(設定画面の OK/キャンセルとは無関係)。
+	COLORREF m_customColors[16];
+	CString m_configPath;                // LoadFromConfig で受け取った config.ini のパス
+	void LoadCustomColors();
+	void SaveCustomColors() const;
+	bool ChooseColorFor(UINT editId, COLORREF defaultColor);
+	// 欄の文字列を色として解釈する(空欄・不正値は defaultColor)。
+	COLORREF GetEditColor(UINT editId, COLORREF defaultColor);
+
+	// 文字色・背景色の欄のプレビュー用ブラシ
+	CBrush m_previewBrush;
+	COLORREF m_previewBrushColor = CLR_INVALID;
 
 	DECLARE_MESSAGE_MAP()
 };

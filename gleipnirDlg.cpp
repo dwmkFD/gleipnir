@@ -463,8 +463,9 @@ bool CgleipnirDlg::ParseColorString(const CString& text, COLORREF& color)
 // static
 void CgleipnirDlg::ParseFontString(const CString& text, LOGFONT& lf, HDC hDC)
 {
-	// "書体名[,サイズ(pt)][,bold|normal]"。カンマ区切りの各要素を種類で判定するので
-	// 順不同でもよい(数字だけ→サイズ、bold/normal 等→太さ、それ以外→書体名)。
+	// "書体名[,サイズ(pt)][,bold|normal][,italic][,underline][,strikeout]"。
+	// カンマ区切りの各要素を種類で判定するので順不同でもよい
+	// (数字だけ→サイズ、bold/normal 等→太さ、italic 等→飾り、それ以外→書体名)。
 	int pos = 0;
 	CString token = text.Tokenize(_T(","), pos);
 	while (!token.IsEmpty())
@@ -490,6 +491,18 @@ void CgleipnirDlg::ParseFontString(const CString& text, LOGFONT& lf, HDC hDC)
 			{
 				lf.lfWeight = FW_NORMAL;
 			}
+			else if (token.CompareNoCase(_T("italic")) == 0 || token == _T("斜体"))
+			{
+				lf.lfItalic = TRUE;
+			}
+			else if (token.CompareNoCase(_T("underline")) == 0 || token == _T("下線"))
+			{
+				lf.lfUnderline = TRUE;
+			}
+			else if (token.CompareNoCase(_T("strikeout")) == 0 || token == _T("取り消し線"))
+			{
+				lf.lfStrikeOut = TRUE;
+			}
 			else if (token.GetLength() < LF_FACESIZE)
 			{
 				_tcscpy_s(lf.lfFaceName, token);
@@ -497,6 +510,32 @@ void CgleipnirDlg::ParseFontString(const CString& text, LOGFONT& lf, HDC hDC)
 		}
 		token = text.Tokenize(_T(","), pos);
 	}
+}
+
+// static
+CString CgleipnirDlg::FormatColorString(COLORREF color)
+{
+	CString s;
+	s.Format(_T("#%02X%02X%02X"), GetRValue(color), GetGValue(color), GetBValue(color));
+	return s;
+}
+
+// static
+CString CgleipnirDlg::FormatFontString(const CString& faceName, int pointSize, bool bold,
+	bool italic, bool underline, bool strikeOut)
+{
+	CString s = faceName;
+	if (pointSize > 0)
+	{
+		CString size;
+		size.Format(_T(",%d"), pointSize);
+		s += size;
+	}
+	s += bold ? _T(",bold") : _T(",normal");
+	if (italic) s += _T(",italic");
+	if (underline) s += _T(",underline");
+	if (strikeOut) s += _T(",strikeout");
+	return s;
 }
 
 HBRUSH CgleipnirDlg::OnCtlColor(CDC* pDC, CWnd* pWnd, UINT nCtlColor)
@@ -1375,7 +1414,7 @@ namespace
 		CString comment; // 新規作成時に項目の前に書く説明
 	};
 
-	// config.ini [Common] の全項目(14項目)と既定値。読み込み側の既定値と一致させること。
+	// config.ini [Common] の全項目(15項目)と既定値。読み込み側の既定値と一致させること。
 	std::vector<DefaultSetting> GetDefaultCommonSettings()
 	{
 		return {
@@ -1405,7 +1444,9 @@ namespace
 			{ _T("BackgroundColor"), _T("#000000"),
 				_T("; 背景色(#RRGGBB / R,G,B)") },
 			{ _T("Font"), _T("Meiryo,bold"),
-				_T("; フォント(書体名[,サイズpt][,bold|normal]。サイズ省略時は画面の既定サイズ)") },
+				_T("; フォント(書体名[,サイズpt][,bold|normal][,italic][,underline][,strikeout]。サイズ省略時は画面の既定サイズ)") },
+			{ _T("CustomColors"), _T(""),
+				_T("; 色の設定ダイアログの「作成した色」(16色、#RRGGBB のカンマ区切り。自動で保存されます)") },
 			{ _T("ClearInputOnHide"), _T("1"),
 				_T("; 非表示にしたとき入力中の文字列・候補をクリアする。1=クリア / 0=残す") },
 		};

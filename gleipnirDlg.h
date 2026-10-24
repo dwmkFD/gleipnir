@@ -114,11 +114,6 @@ protected:
 	int m_editMinHeight = 0; // .rc で決めた検索欄の高さ(フォントに合わせて広げる際の下限)
 	void ApplyAppearance();
 
-	// 色文字列("#RRGGBB" / "RRGGBB" / "R,G,B")を解釈する。不正なら false。
-	static bool ParseColorString(const CString& text, COLORREF& color);
-	// フォント文字列("書体名[,サイズ(pt)][,bold|normal]")を解釈し、lf に反映する。
-	// 省略された要素は lf の値をそのまま残す。サイズ変換に hDC を使う。
-	static void ParseFontString(const CString& text, LOGFONT& lf, HDC hDC);
 	// config.ini の CandidateIcon の値を解釈する("0"/"非表示" 以外は表示)。
 	static bool IsCandidateIconEnabled(const CString& value);
 
@@ -180,6 +175,16 @@ protected:
 	static void EnumerateFolder(const CString& folderPath, std::vector<FileEntry>& items);
 	static CString GetParentFolderPath(const CString& folderPath); // ルートなら空
 public:
+	// 色文字列("#RRGGBB" / "RRGGBB" / "R,G,B")を解釈する。不正なら false。
+	static bool ParseColorString(const CString& text, COLORREF& color);
+	// 色を "#RRGGBB" 形式の文字列にする。
+	static CString FormatColorString(COLORREF color);
+	// フォント文字列("書体名[,サイズ(pt)][,bold|normal][,italic][,underline][,strikeout]")を
+	// 解釈し、lf に反映する。省略された要素は lf の値をそのまま残す。サイズ変換に hDC を使う。
+	static void ParseFontString(const CString& text, LOGFONT& lf, HDC hDC);
+	// フォントの各要素からフォント文字列を作る(太さは bold/normal を必ず書く)。
+	static CString FormatFontString(const CString& faceName, int pointSize, bool bold,
+		bool italic, bool underline, bool strikeOut);
 	static SearchMethod ParseSearchMethod(const CString& value, SearchMethod defaultMethod);
 	static LPCTSTR SearchMethodToConfigValue(SearchMethod method);
 	// 入力を空白(半角/全角)で区切った語の配列にし、小文字化する(AND検索用)。
