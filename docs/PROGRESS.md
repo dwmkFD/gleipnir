@@ -613,8 +613,9 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
 - **フック(`LowLevelKeyboardProc`)**:
   - Caps Lockは従来どおり`scanCode`(0x3A)で判定(JIS配列対策)、それ以外は`vkCode`で
     判定し、修飾キーは`GetAsyncKeyState`で確認。
-  - 修飾キー無しのCaps Lock(既定)は従来どおり修飾キーの状態に関わらず反応させる
-    (Shift+Caps Lock等でCaps Lockがオンになるのも引き続き防ぐ)。
+  - 修飾キー無しのCaps Lock(既定)は、単独・Ctrl/Alt同時押しで反応させる。
+    **Shift+Caps Lockは横取りせずOSに渡す**(本家fenrirに合わせ、Caps Lockの
+    オン/オフ切り替えに使える。2026-10-24変更。それまでは全て横取りしていた)。
   - 一致したキーのキーダウン・キーアップはOSへ伝えない(従来どおり)。
   - **押しっぱなしのキーリピートで表示/非表示を繰り返さない**よう押下状態を記録
     (`s_hotKeyDown`)。従来のCaps Lockはリピートのたびにトグルしていたので、
@@ -679,6 +680,7 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
    Tab/BackSpace/F1等の単独キーも割り当てられるか、Deleteで空欄(既定)に戻るか、
    同じキーを2つに割り当てるとOK時に警告が出るか、Alt同時押しの割り当てが動くか。
    呼び出しキー(「20.」): 設定画面に`CapsLock`と表示されるか、config.iniの
+   Shift+Caps LockでCaps Lockがオン/オフでき、ランチャーは反応しないか(US/JIS双方)。
    `HotKey`を`F12`や`Ctrl+Alt+Space`に書き換えて「設定を再読み込み」→そのキーで
    切り替わり、Caps Lockが通常のCaps Lockに戻るか、キーを押しっぱなしにしても
    点滅しないか、Alt同時押しで前面アプリのメニューが反応しないか。
@@ -844,3 +846,5 @@ GitHubリポジトリ(`dwmkFD/gleipnir`)の`resource.h`/`gleipnir.rc`を実際�
   した。設定画面は表示のみ(変更・保存不可)、ファイルの直接編集で変更可能。
   キーリピートでのトグル連発を防止、Alt同時押し時のメニュー反応を抑止
   (`KeyBinding.h`、`gleipnirDlg.h/.cpp`、`CSettingCommonDlg.h/.cpp`)。動作未確認。
+- 2026-10-24: Shift+Caps Lockは横取りせずOSに渡すように変更(本家fenrirに合わせ、
+  Caps Lockのオン/オフに使える。`gleipnirDlg.cpp`)。動作未確認。

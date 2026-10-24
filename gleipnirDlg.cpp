@@ -2868,10 +2868,15 @@ LRESULT CALLBACK CgleipnirDlg::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
 				const bool ctrl = (::GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
 				const bool shift = (::GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 				const bool alt = (::GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
-				// 修飾キー無しの Caps Lock(既定)は、従来どおり修飾キーの状態に関わらず反応させる
-				// (Shift+Caps Lock 等で Caps Lock がオンになってしまうのも防ぐ)。
+				// 修飾キー無しの Caps Lock(既定)の扱い(本家 fenrir に合わせる):
+				//   - Shift+Caps Lock は横取りせず OS に渡す(Caps Lock のオン/オフ切り替えに使える)
+				//   - それ以外(単独、Ctrl/Alt 同時押し)は従来どおり表示/非表示の切り替え
 				const bool plainCapsLock = (s_hotKey.vk == VK_CAPITAL)
 					&& !s_hotKey.ctrl && !s_hotKey.shift && !s_hotKey.alt;
+				if (plainCapsLock && shift)
+				{
+					return CallNextHookEx(s_hKeyboardHook, nCode, wParam, lParam);
+				}
 				if (plainCapsLock
 					|| (ctrl == s_hotKey.ctrl && shift == s_hotKey.shift && alt == s_hotKey.alt))
 				{
