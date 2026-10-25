@@ -165,6 +165,7 @@ HHOOK CgleipnirDlg::s_hKeyboardHook = nullptr;
 HWND CgleipnirDlg::s_hMainWnd = nullptr;
 KeyBinding CgleipnirDlg::s_hotKey = DefaultHotKey();
 bool CgleipnirDlg::s_hotKeyDown = false;
+DWORD CgleipnirDlg::s_hotKeyLastTime = 0;
 
 CgleipnirDlg::CgleipnirDlg(CWnd* pParent /*=nullptr*/)
 	: CDialogEx(IDD_GLEIPNIR_DIALOG, pParent)
@@ -661,7 +662,7 @@ LRESULT CgleipnirDlg::OnTrayIcon(WPARAM wParam, LPARAM lParam)
 	switch (lParam)
 	{
 	case WM_LBUTTONDBLCLK:
-		ToggleVisibility();
+		ToggleVisibility(false); // トレイ操作中はタスクバーが前面なので、表示中なら常に隠す
 		break;
 
 	case WM_RBUTTONUP:
@@ -968,18 +969,86 @@ void CgleipnirDlg::HideLauncherWindow()
 	ShowWindow(SW_HIDE);
 }
 
-void CgleipnirDlg::ToggleVisibility()
+void CgleipnirDlg::ToggleVisibility(bool hideOnlyIfForeground)
 {
-	if (IsWindowVisible())
+	// 表示中でも、他のウィンドウの裏に隠れている(前面化に失敗した等)場合は
+	// 非表示にせず前面に出し直す。前面にあるときだけ非表示にする。
+	if (IsWindowVisible() && (!hideOnlyIfForeground || IsLauncherForeground()))
 	{
 		HideLauncherWindow();
 	}
 	else
 	{
 		ShowWindow(SW_SHOW);
-		SetForegroundWindow();
+		BringLauncherToFront();
 		GetDlgItem(IDC_EDIT1)->SetFocus();
 	}
+}
+
+bool CgleipnirDlg::IsLauncherForeground() const
+{
+	const HWND hFg = ::GetForegroundWindow();
+	if (hFg == nullptr)
+	{
+		return false;
+	}
+	// 設定ダイアログやメッセージボックス(所有者がこのウィンドウ)が前面でも「自分」とみなす。
+	return hFg == m_hWnd || ::GetAncestor(hFg, GA_ROOTOWNER) == m_hWnd;
+}
+
+void CgleipnirDlg::BringLauncherToFront()
+{
+	// Windows は、ユーザーが直前に操作していないプロセスからの SetForegroundWindow を
+	// 拒否する(タスクバーが点滅するだけになる)。呼び出しキーは低レベルフックで
+	// 横取りしているため、gleipnir は「直前に操作されたプロセス」とみなされない。
+	// 対策1: 現在の前面ウィンドウのスレッドと入力処理を一時的に連結してから前面化する。
+	const HWND hFg = ::GetForegroundWindow();
+	if (hFg == m_hWnd)
+	{
+		return;
+	}
+
+	const DWORD myThread = ::GetCurrentThreadId();
+	const DWORD fgThread = (hFg != nullptr) ? ::GetWindowThreadProcessId(hFg, nullptr) : 0;
+	bool attached = false;
+	if (fgThread != 0 && fgThread != myThread)
+	{
+		attached = ::AttachThreadInput(myThread, fgThread, TRUE) != FALSE;
+	}
+
+	::BringWindowToTop(m_hWnd);
+	::SetForegroundWindow(m_hWnd);
+	::SetActiveWindow(m_hWnd);
+
+	if (attached)
+	{
+		::AttachThreadInput(myThread, fgThread, FALSE);
+	}
+
+	if (::GetForegroundWindow() == m_hWnd)
+	{
+		return;
+	}
+
+	// 対策2(1で駄目だった場合): 自分からキー入力を送ると前面化の制限が解除されるため、
+	// Alt を押した状態で前面化する。Alt 単独の押下/解放だとメニューバーが反応するので、
+	// 未割り当てのダミーキーを挟む(フック側は自分が送ったダミーキーを無視する)。
+	INPUT inputs[3] = {};
+	inputs[0].type = INPUT_KEYBOARD;
+	inputs[0].ki.wVk = VK_MENU;
+	inputs[1].type = INPUT_KEYBOARD;
+	inputs[1].ki.wVk = kMenuMaskKey;
+	inputs[2] = inputs[1];
+	inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
+	::SendInput(3, inputs, sizeof(INPUT));
+
+	::SetForegroundWindow(m_hWnd);
+
+	INPUT altUp = {};
+	altUp.type = INPUT_KEYBOARD;
+	altUp.ki.wVk = VK_MENU;
+	altUp.ki.dwFlags = KEYEVENTF_KEYUP;
+	::SendInput(1, &altUp, sizeof(INPUT));
 }
 
 bool CgleipnirDlg::ConfirmScan(const CString& message)
@@ -2900,6 +2969,15 @@ LRESULT CALLBACK CgleipnirDlg::LowLevelKeyboardProc(int nCode, WPARAM wParam, LP
 			const bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
 			if (isDown)
 			{
+				// キーアップを取りこぼして「押下中」のまま固まらないよう、直前のイベントから
+				// 1.5秒以上空いていれば新しい押下とみなす(キーリピートは長くても約1秒で始まり、
+				// 以後は数十ミリ秒間隔で届く)。
+				if (s_hotKeyDown && (pkbhs->time - s_hotKeyLastTime) > 1500)
+				{
+					s_hotKeyDown = false;
+				}
+				s_hotKeyLastTime = pkbhs->time;
+
 				if (s_hotKeyDown)
 				{
 					return 1; // 押しっぱなしのキーリピート: 何もせず握りつぶす

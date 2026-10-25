@@ -132,7 +132,14 @@ protected:
 	void ShowTrayBalloon(const CString& title, const CString& text);
 	// 入力欄・候補をクリアしてから(設定 ClearInputOnHide が有効な場合)非表示にする。
 	void HideLauncherWindow();
-	void ToggleVisibility();	// ウィンドウの表示/非表示を切り替える
+	// ウィンドウを確実に最前面・入力対象にする(Windows の前面化制限への対策)。
+	void BringLauncherToFront();
+	// 自分(または自分が所有するダイアログ)が前面にあるか。
+	bool IsLauncherForeground() const;
+	// ウィンドウの表示/非表示を切り替える。hideOnlyIfForeground が true(呼び出しキー)なら、
+	// 表示中でも他のウィンドウの裏に隠れているときは非表示にせず前面に出し直す。
+	// トレイアイコンのダブルクリックでは、クリック時点でタスクバーが前面になるため false で呼ぶ。
+	void ToggleVisibility(bool hideOnlyIfForeground = true);
 
 	void CreateDynamicControls();
 	void UpdateSearchResults(const CString& query);
@@ -301,6 +308,7 @@ protected:
 	// 呼び出しキー(config.ini [Common] HotKey。設定画面では変更不可、ファイルの直接編集のみ)。
 	static KeyBinding s_hotKey;
 	static bool s_hotKeyDown; // 押下中(キーリピートで表示/非表示を繰り返さないため)
+	static DWORD s_hotKeyLastTime; // 呼び出しキーの直近のイベント時刻(キーアップ取りこぼし対策)
 	static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
 
 	// 生成された、メッセージ割り当て関数
