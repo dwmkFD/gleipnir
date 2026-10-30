@@ -48,6 +48,10 @@ constexpr int kDefaultMaxEnumCount = 200;  // 既定(従来の固定値と同じ
 constexpr int kMinMaxEnumCount = 1;
 constexpr int kMaxMaxEnumCount = 10000;    // リストボックスへの追加が重くなりすぎない上限
 
+// 候補リストを一度に表示する最大行数(これを超える分はスクロール)。
+// 候補があるときだけウィンドウを下に伸ばしてリストを表示し、その高さの上限になる。
+constexpr int kMaxVisibleResultRows = 15;
+
 // 検索方式(設定「検索方式」。config.ini には prefix / substring / skip で保存)
 enum class SearchMethod
 {
@@ -143,6 +147,15 @@ protected:
 
 	void CreateDynamicControls();
 	void UpdateSearchResults(const CString& query);
+
+	// 候補リストを空にし、ウィンドウを検索欄だけの高さに戻す。
+	void ClearResultList();
+	// 検索欄・プログレスバー・候補リストを配置し直し、ウィンドウの高さを中身に合わせる
+	// (候補が無ければ検索欄だけ、あれば件数分(最大 kMaxVisibleResultRows 行)下に伸ばす)。
+	// 候補リストの中身・プログレスバーの表示・フォントが変わったら呼ぶ。
+	void UpdateWindowLayout();
+	int m_layoutWindowHeight = 0; // UpdateWindowLayout() が決めたウィンドウの高さ(手動での高さ変更を禁止する)
+	bool m_inLayout = false;      // UpdateWindowLayout() の再入防止(自身の SetWindowPos → WM_SIZE)
 
 	// 検索方式の設定(config.ini [Common] SearchMethodNormal / SearchMethodFolderExpand)。
 	// フォルダ展開時の方式は、フォルダ展開機能の実装時に使う(現状は読み込みのみ)。
@@ -319,6 +332,8 @@ protected:
 	afx_msg void OnDestroy();
 	afx_msg void OnClose();
 	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
+	afx_msg void OnSize(UINT nType, int cx, int cy);
+	afx_msg void OnGetMinMaxInfo(MINMAXINFO* lpMMI);
 	afx_msg LRESULT OnTrayIcon(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnCapsLockToggle(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnIndexComplete(WPARAM wParam, LPARAM lParam);

@@ -38,6 +38,10 @@ namespace
 	// フォルダ展開時はフォルダの中身を一覧する用途のため、設定とは別の固定上限。
 	constexpr int kMaxFolderExpandResults = 2000;
 
+	// メイン画面のレイアウト(ピクセル)。
+	constexpr int kProgressBarHeight = 8; // スキャン中のプログレスバーの高さ
+	constexpr int kLayoutGap = 4;         // 検索欄・プログレスバー・候補リストの間隔
+
 	// Edit Control にこの文字列(大文字小文字区別なし)が入力されたら
 	// スキャンを実行する。
 	// Edit Control にこれらの文字列(大文字小文字区別なし)が入力されたら
@@ -189,6 +193,8 @@ BEGIN_MESSAGE_MAP(CgleipnirDlg, CDialogEx)
 	ON_WM_DESTROY()
 	ON_WM_CLOSE()
 	ON_WM_SYSCOMMAND()
+	ON_WM_SIZE()
+	ON_WM_GETMINMAXINFO()
 	ON_MESSAGE(WM_TRAYICON, &CgleipnirDlg::OnTrayIcon)
 	ON_MESSAGE(WM_CAPSLOCK_TOGGLE, &CgleipnirDlg::OnCapsLockToggle)
 	ON_MESSAGE(WM_INDEX_COMPLETE, &CgleipnirDlg::OnIndexComplete)
@@ -254,31 +260,21 @@ void CgleipnirDlg::CreateDynamicControls()
 	GetDlgItem(IDC_EDIT1)->GetWindowRect(&editRect);
 	ScreenToClient(&editRect);
 
-	CRect clientRect;
-	GetClientRect(&clientRect);
-
-	// IDC_EDIT1 の左マージンを基準に、右にも同じ幅の余白を取って配置する
-	// (.rc の詳細なレイアウトが分からないための簡易的な計算)。
-	const int progressHeight = 8;
-	CRect progressRect(
-		editRect.left,
-		editRect.bottom + 4,
-		clientRect.right - editRect.left,
-		editRect.bottom + 4 + progressHeight);
+	// 位置・大きさは仮。実際の配置は UpdateWindowLayout() で行う
+	// (.rc のメインダイアログは検索欄1行分の高さしかないため、候補があるときだけ
+	// ウィンドウを下に伸ばしてリストを表示する)。
+	CRect progressRect(editRect.left, editRect.bottom + 4, editRect.right, editRect.bottom + 4 + kProgressBarHeight);
 
 	// スキャン中であることを示すプログレスバー。総ファイル数が事前に
 	// わからないため、パーセンテージ表示ではなく不確定(マーキー)表示にする。
 	m_progressBar.Create(WS_CHILD | PBS_MARQUEE, progressRect, this, IDC_PROGRESS_SCAN);
 	m_progressBar.ShowWindow(SW_HIDE);
 
-	CRect listRect(
-		editRect.left,
-		progressRect.bottom + 4,
-		clientRect.right - editRect.left,
-		clientRect.bottom - editRect.left);
+	// 候補リストは候補が無い間は非表示(WS_VISIBLE を付けない)。
+	CRect listRect(editRect.left, progressRect.bottom + 4, editRect.right, progressRect.bottom + 4 + 100);
 
 	m_listResults.Create(
-		WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_BORDER | WS_TABSTOP | LBS_NOTIFY | LBS_HASSTRINGS
+		WS_CHILD | WS_VSCROLL | WS_BORDER | WS_TABSTOP | LBS_NOTIFY | LBS_HASSTRINGS
 		| LBS_OWNERDRAWFIXED | LBS_NOINTEGRALHEIGHT,
 		listRect, this, IDC_LIST_RESULTS);
 	// 行 i の描画時に m_filteredResults[i] のパスからアイコンを取得する。
@@ -375,23 +371,8 @@ void CgleipnirDlg::ApplyAppearance()
 	editRect.bottom = editRect.top + editHeight;
 	pEdit->MoveWindow(&editRect);
 
-	CRect clientRect;
-	GetClientRect(&clientRect);
-
-	CRect progressRect;
-	m_progressBar.GetWindowRect(&progressRect);
-	ScreenToClient(&progressRect);
-	const int progressHeight = progressRect.Height();
-	progressRect.top = editRect.bottom + 4;
-	progressRect.bottom = progressRect.top + progressHeight;
-	m_progressBar.MoveWindow(&progressRect);
-
-	CRect listRect(
-		editRect.left,
-		progressRect.bottom + 4,
-		clientRect.right - editRect.left,
-		clientRect.bottom - editRect.left);
-	m_listResults.MoveWindow(&listRect);
+	// 検索欄の高さ・候補リストの行の高さが変わったので、ウィンドウの高さを合わせ直す。
+	UpdateWindowLayout();
 
 	Invalidate();
 	pEdit->Invalidate();
@@ -620,6 +601,129 @@ void CgleipnirDlg::OnSysCommand(UINT nID, LPARAM lParam)
 	CDialogEx::OnSysCommand(nID, lParam);
 }
 
+void CgleipnirDlg::OnSize(UINT nType, int cx, int cy)
+{
+	CDialogEx::OnSize(nType, cx, cy);
+
+	// 枠のドラッグで幅を変えたとき、検索欄・候補リストの幅を追従させる
+	// (高さは中身に合わせて UpdateWindowLayout() が決める)。
+	if (nType != SIZE_MINIMIZED)
+	{
+		UpdateWindowLayout();
+	}
+}
+
+void CgleipnirDlg::OnGetMinMaxInfo(MINMAXINFO* lpMMI)
+{
+	CDialogEx::OnGetMinMaxInfo(lpMMI);
+
+	// 高さは中身(候補の件数)で決まるので、枠のドラッグでは変えられないようにする。
+	// 幅は自由に変えられる(下限のみ)。
+	if (m_layoutWindowHeight > 0)
+	{
+		lpMMI->ptMinTrackSize.y = m_layoutWindowHeight;
+		lpMMI->ptMaxTrackSize.y = m_layoutWindowHeight;
+	}
+	lpMMI->ptMinTrackSize.x = (std::max)(lpMMI->ptMinTrackSize.x, static_cast<LONG>(200));
+}
+
+void CgleipnirDlg::ClearResultList()
+{
+	m_listResults.ResetContent();
+	m_filteredResults.clear();
+	UpdateWindowLayout();
+}
+
+void CgleipnirDlg::UpdateWindowLayout()
+{
+	CWnd* pEdit = GetDlgItem(IDC_EDIT1);
+	if (m_inLayout || pEdit == nullptr
+		|| m_listResults.GetSafeHwnd() == nullptr || m_progressBar.GetSafeHwnd() == nullptr
+		|| IsIconic())
+	{
+		return;
+	}
+	m_inLayout = true;
+
+	CRect windowRect;
+	GetWindowRect(&windowRect);
+	CRect clientRect;
+	GetClientRect(&clientRect);
+	const int nonClientHeight = windowRect.Height() - clientRect.Height();
+
+	// 検索欄の位置(.rc の余白)を基準にする。高さは ApplyAppearance() がフォントに合わせて決める。
+	CRect editRect;
+	pEdit->GetWindowRect(&editRect);
+	ScreenToClient(&editRect);
+	const int marginX = editRect.left;  // 左右の余白
+	const int marginY = editRect.top;   // 上下の余白
+	const int width = (std::max)(static_cast<int>(clientRect.Width()) - marginX * 2, 1);
+	if (editRect.Width() != width)
+	{
+		editRect.right = editRect.left + width;
+		pEdit->MoveWindow(&editRect);
+	}
+
+	int y = editRect.bottom;
+
+	// スキャン中のプログレスバー(表示中だけ場所を取る)。
+	// IsWindowVisible() はメインウィンドウが隠れていると false になるので、自身のスタイルで判定する。
+	m_progressBar.MoveWindow(marginX, y + kLayoutGap, width, kProgressBarHeight);
+	if ((m_progressBar.GetStyle() & WS_VISIBLE) != 0)
+	{
+		y += kLayoutGap + kProgressBarHeight;
+	}
+
+	// 候補リスト: 候補があるときだけ、件数分(最大 kMaxVisibleResultRows 行)の高さで表示する。
+	const int count = m_listResults.GetCount();
+	if (count > 0)
+	{
+		const int itemHeight = (std::max)(m_listResults.GetItemHeight(0), 1);
+		const int borderHeight = ::GetSystemMetrics(SM_CYBORDER) * 2; // WS_BORDER の上下
+		int rows = (std::min)(count, kMaxVisibleResultRows);
+
+		// 画面(作業領域)の下端からはみ出さないよう、入りきる行数に抑える(最低1行)。
+		MONITORINFO mi = { sizeof(mi) };
+		if (::GetMonitorInfo(::MonitorFromWindow(m_hWnd, MONITOR_DEFAULTTONEAREST), &mi))
+		{
+			const int fixedHeight = nonClientHeight + y + kLayoutGap + borderHeight + marginY;
+			const int available = mi.rcWork.bottom - windowRect.top - fixedHeight;
+			rows = (std::max)(1, (std::min)(rows, available / itemHeight));
+		}
+
+		const int listHeight = rows * itemHeight + borderHeight;
+		m_listResults.SetWindowPos(nullptr, marginX, y + kLayoutGap, width, listHeight,
+			SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+		y += kLayoutGap + listHeight;
+
+		// 選択行が見える位置にスクロールする(高さが変わって見えなくなることがあるため)。
+		const int sel = m_listResults.GetCurSel();
+		if (sel >= 0)
+		{
+			m_listResults.SetCurSel(sel);
+		}
+	}
+	else
+	{
+		// 候補リストにフォーカスがあったら、隠す前に検索欄へ戻す。
+		if (::GetFocus() == m_listResults.GetSafeHwnd())
+		{
+			pEdit->SetFocus();
+		}
+		m_listResults.ShowWindow(SW_HIDE);
+	}
+
+	const int windowHeight = y + marginY + nonClientHeight;
+	m_layoutWindowHeight = windowHeight; // OnGetMinMaxInfo で使うので SetWindowPos より先に設定する
+	if (windowRect.Height() != windowHeight)
+	{
+		SetWindowPos(nullptr, 0, 0, windowRect.Width(), windowHeight,
+			SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+	}
+
+	m_inLayout = false;
+}
+
 BOOL CgleipnirDlg::PreTranslateMessage(MSG* pMsg)
 {
 	// 設定画面で割り当てたキー(フォルダ展開 Ctrl+F / 親フォルダ展開 Ctrl+B /
@@ -720,6 +824,7 @@ LRESULT CgleipnirDlg::OnIndexComplete(WPARAM wParam, LPARAM lParam)
 	// プログレスバーを止めて隠す
 	m_progressBar.SetMarquee(FALSE, 0);
 	m_progressBar.ShowWindow(SW_HIDE);
+	UpdateWindowLayout(); // プログレスバーの分の高さを詰める
 
 	if (completion->canceled)
 	{
@@ -834,8 +939,7 @@ void CgleipnirDlg::OnEnChangeEdit1()
 	{
 		// コマンド入力を検索欄に残さないようクリアしてから確認ダイアログを出す
 		SetDlgItemText(IDC_EDIT1, _T(""));
-		m_listResults.ResetContent();
-		m_filteredResults.clear();
+		ClearResultList();
 
 		ExecuteScanWithConfirmation();
 		return;
@@ -844,8 +948,7 @@ void CgleipnirDlg::OnEnChangeEdit1()
 	if (trimmed.CompareNoCase(kScanStopCommand) == 0 || trimmed.CompareNoCase(kScanCancelCommand) == 0)
 	{
 		SetDlgItemText(IDC_EDIT1, _T(""));
-		m_listResults.ResetContent();
-		m_filteredResults.clear();
+		ClearResultList();
 
 		RequestCancelScan();
 		return;
@@ -854,8 +957,7 @@ void CgleipnirDlg::OnEnChangeEdit1()
 	if (trimmed.CompareNoCase(kOptionCommand) == 0)
 	{
 		SetDlgItemText(IDC_EDIT1, _T(""));
-		m_listResults.ResetContent();
-		m_filteredResults.clear();
+		ClearResultList();
 
 		CSettingDlg dlg(this);
 		if (dlg.DoModal() == IDOK)
@@ -962,8 +1064,7 @@ void CgleipnirDlg::HideLauncherWindow()
 	{
 		LeaveFolderExpansion();
 		SetDlgItemText(IDC_EDIT1, _T(""));
-		m_listResults.ResetContent();
-		m_filteredResults.clear();
+		ClearResultList();
 	}
 
 	ShowWindow(SW_HIDE);
@@ -1277,8 +1378,7 @@ bool CgleipnirDlg::TryExecuteInstantCommand(const CString& input)
 	auto finishAndHide = [this]()
 	{
 		SetDlgItemText(IDC_EDIT1, _T(""));
-		m_listResults.ResetContent();
-		m_filteredResults.clear();
+		ClearResultList();
 		ShowWindow(SW_HIDE);
 	};
 
@@ -1648,6 +1748,7 @@ void CgleipnirDlg::UpdateSearchResults(const CString& query)
 	const std::vector<CString> terms = SplitQueryTerms(query);
 	if (terms.empty())
 	{
+		UpdateWindowLayout(); // 候補なし: 検索欄だけの高さに戻す
 		return;
 	}
 
@@ -1756,6 +1857,9 @@ void CgleipnirDlg::UpdateSearchResults(const CString& query)
 	{
 		m_listResults.SetCurSel(0);
 	}
+
+	// 件数に合わせてウィンドウを伸ばす/縮める(候補が無ければリストを隠す)。
+	UpdateWindowLayout();
 }
 
 bool CgleipnirDlg::HandleAssignedKey(const MSG* pMsg)
@@ -1910,8 +2014,7 @@ bool CgleipnirDlg::ExpandParentFolder()
 		// ルート(またはアクセス不能)なら展開を終了して通常の検索に戻る。
 		LeaveFolderExpansion();
 		SetDlgItemText(IDC_EDIT1, _T(""));
-		m_listResults.ResetContent();
-		m_filteredResults.clear();
+		ClearResultList();
 		return true;
 	}
 	return ExpandFolder(parent, current);
@@ -1994,6 +2097,9 @@ void CgleipnirDlg::UpdateFolderExpandResults(const CString& query)
 	{
 		m_listResults.SetCurSel(0);
 	}
+
+	// 件数に合わせてウィンドウを伸ばす/縮める(候補が無ければリストを隠す)。
+	UpdateWindowLayout();
 }
 
 // static
@@ -2266,8 +2372,7 @@ void CgleipnirDlg::LaunchSelectedResult()
 		// 起動に成功したら検索窓をクリア(フォルダ展開も終了)し、自身は非表示にする
 		LeaveFolderExpansion();
 		SetDlgItemText(IDC_EDIT1, _T(""));
-		m_listResults.ResetContent();
-		m_filteredResults.clear();
+		ClearResultList();
 		ShowWindow(SW_HIDE);
 	}
 }
@@ -2880,6 +2985,7 @@ void CgleipnirDlg::BuildIndexAsync(const std::vector<CString>& driveRoots,
 	// スキャン中であることを示すプログレスバーを表示・アニメーション開始
 	m_progressBar.ShowWindow(SW_SHOW);
 	m_progressBar.SetMarquee(TRUE, 30);
+	UpdateWindowLayout(); // プログレスバーの分だけウィンドウを伸ばす
 	SetWindowText(_T("gleipnir - スキャン準備中..."));
 
 	IndexThreadParam* param = new IndexThreadParam();
